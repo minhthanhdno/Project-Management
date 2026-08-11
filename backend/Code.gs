@@ -23,8 +23,13 @@
 
 const ID_COL = 'ID';
 
+// PHẢI TRÙNG với ACCESS_TOKEN trong js/config.js (frontend). Đổi giá trị này
+// và deploy lại (Manage deployments > Edit > New version) để áp dụng.
+const ACCESS_TOKEN = 'hpc-secret-8f3a1c';
+
 function doGet(e) {
   try {
+    if (e.parameter.token !== ACCESS_TOKEN) return jsonOut_({ error: 'Unauthorized' });
     const action = (e.parameter.action || 'all');
     let result;
     if (action === 'meta') result = getMeta_();
@@ -41,6 +46,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
+    if (body.token !== ACCESS_TOKEN) return jsonOut_({ error: 'Unauthorized' });
     const action = body.action;
     let result;
     if (action === 'upsert') result = upsertRow_(body.sheet, body.data);

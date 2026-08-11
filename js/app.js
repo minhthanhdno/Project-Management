@@ -189,4 +189,8 @@ window.HPC_APP = (function () {
   return { init, render, refreshNavCounts, refreshSyncBadgeSoon, moduleById, get MODULES() { return MODULES; } };
 })();
 
-document.addEventListener("DOMContentLoaded", window.HPC_APP.init);
+document.addEventListener("DOMContentLoaded", () => {
+  // Chỉ chạy app khi đã đăng nhập; auth.js tự gọi lại init() sau khi nhập đúng
+  // mật khẩu. Xem js/auth.js — không đổi gì trong logic init() bên trên.
+  if (window.HPC_AUTH.check(window.HPC_APP.init)) window.HPC_APP.init();
+});

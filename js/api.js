@@ -10,6 +10,7 @@ window.HPC_API = (function () {
   async function get(params) {
     const url = new URL(BASE());
     Object.keys(params || {}).forEach(k => url.searchParams.set(k, params[k]));
+    url.searchParams.set("token", window.HPC_CONFIG.ACCESS_TOKEN); // Phương án 4
     const res = await fetch(url.toString(), { method: "GET" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const json = await res.json();
@@ -23,7 +24,7 @@ window.HPC_API = (function () {
     const res = await fetch(BASE(), {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(Object.assign({}, body, { token: window.HPC_CONFIG.ACCESS_TOKEN })), // Phương án 4
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const json = await res.json();

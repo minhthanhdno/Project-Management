@@ -19,6 +19,17 @@ window.HPC_CONFIG = {
   //    `python3 dev/mock_server.py` rồi để nguyên giá trị localhost bên dưới.
   API_URL: "https://script.google.com/macros/s/AKfycbyvDWqNxdgap0R80QkO9Q4w_CUhInA21-lQkEShNtQedtTb6ZEaGX_JyKmS_ZR4S2-b/exec",  // ⚠️ THAY BẰNG LINK APPS SCRIPT WEB APP THẬT CỦA BẠN TRƯỚC KHI DÙNG THẬT
 
+  // 1b. ĐĂNG NHẬP ĐƠN GIẢN (không phân quyền theo người dùng):
+  //     - SITE_PASSWORD: mật khẩu để mở được giao diện (chặn người lạ có link) — xem js/auth.js
+  //     - ACCESS_TOKEN: mã bí mật gửi kèm mọi request lên backend — PHẢI TRÙNG
+  //       với ACCESS_TOKEN khai báo trong backend/Code.gs, để ai đó có link Apps
+  //       Script cũng không gọi thẳng lấy được dữ liệu nếu không có mã này.
+  //     ⚠️ Đây KHÔNG phải bảo mật cấp doanh nghiệp (mật khẩu/token nằm trong
+  //     source JS, ai xem F12 vẫn thấy được) — chỉ đủ để chặn người lạ tình cờ
+  //     có link hoặc dò tìm ngẫu nhiên. Nhớ đổi 2 giá trị dưới đây trước khi dùng.
+  SITE_PASSWORD: "helix2026",
+  ACCESS_TOKEN: "hpc-secret-8f3a1c",
+
   // 2. Thông tin hiển thị chung
   PROJECT_NAME: "BVĐK Bình Dương — 1.500 giường",
   ORG_LINE: "Liên danh: HELIX · Thành An 96 · Sao Nam An",
@@ -37,7 +48,7 @@ window.HPC_CONFIG = {
   // 4. Tự động đồng bộ kéo dữ liệu mới từ Google Sheet mỗi N giây (đồng bộ 2 chiều:
   //    ai sửa trực tiếp trên Google Sheet / AppSheet cũng sẽ thấy trên tool).
   //    Đặt 0 để tắt tự động, chỉ đồng bộ khi bấm nút "Làm mới".
-  AUTO_PULL_SECONDS: 120,
+  AUTO_PULL_SECONDS: 20,
 
   // 4b. CHỈ thực sự tự đồng bộ khi người dùng NGƯNG tương tác (gõ/click/chọn)
   //     liên tục trong khoảng này (giây) — tránh render đè lên ô đang gõ dở.

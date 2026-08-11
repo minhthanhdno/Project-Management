@@ -65,6 +65,82 @@ window.HPC_ENGINE = (function () {
     return { green: "b-green", amber: "b-amber", red: "b-red", gray: "b-gray", blue: "b-blue" }[colorName] || "b-gray";
   }
 
+  /* ---------------------- V3: thứ tự kéo-thả + mã tự động ---------------------- */
+  // Sắp xếp theo cột "Order" (số, tự sinh khi kéo-thả) nếu có; dòng chưa có
+  // Order (chưa từng bị kéo) giữ nguyên thứ tự tự nhiên và xếp sau cùng.
+  function sortByOrder(rows) {
+    if (!rows.some(r => r.Order !== undefined && r.Order !== "")) return rows;
+    return rows.slice().sort((a, b) => toNum(a.Order, 1e9) - toNum(b.Order, 1e9));
+  }
+
+  // A, B, C ... Z, AA, AB ... (đủ dùng cho số giai đoạn thực tế)
+  function letterFor(zeroBasedIndex) {
+    let n = zeroBasedIndex + 1, s = "";
+    while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+    return s;
+  }
+
+  // Chỉ áp dụng cho module có groupByColumn VÀ cột đầu tiên là cột mã kiểu "#"
+  // (Code/Stt của tasks, checklist, software, documents) — tự nhận diện từ
+  // config.js sẵn có, KHÔNG cần thêm khai báo mới. Gọi lại sau khi thêm/xoá/kéo-thả.
+  function recomputeCodes(moduleCfg) {
+    if (!moduleCfg.groupByColumn || !moduleCfg.columns || moduleCfg.columns[0].label !== "#") return;
+    const codeKey = moduleCfg.columns[0].key;
+    const sheetData = store.getSheetData(moduleCfg.sheet);
+    const groups = uniqueValues(sheetData.rows, moduleCfg.groupByColumn);
+    groups.forEach((g, gi) => {
+      const groupCode = letterFor(gi) + "1";
+      const items = sortByOrder(sheetData.rows.filter(r => r[moduleCfg.groupByColumn] === g));
+      items.forEach((r, ii) => {
+        const newCode = groupCode + "." + (ii + 1);
+        if (r[codeKey] !== newCode) store.updateField(moduleCfg.sheet, r.ID, codeKey, newCode);
+      });
+    });
+  }
+
+  // Gắn kéo-thả cho 1 <tbody>: kéo thả để đổi vị trí trong CÙNG bảng này, ghi
+  // "Order" tuần tự cho các dòng rồi tính lại mã (recomputeCodes) + lưu server.
+  function enableDragReorder(tbody, moduleCfg) {
+    let dragId = null;
+    Array.from(tbody.children).forEach(tr => {
+      const handle = tr.querySelector(".drag-handle");
+      if (!handle) return;
+      handle.addEventListener("mousedown", () => { tr.draggable = true; });
+      tr.addEventListener("dragend", () => { tr.draggable = false; tr.classList.remove("dragging"); clearDragOverMarks(tbody); });
+      tr.addEventListener("dragstart", e => {
+        dragId = tr.dataset.id;
+        e.dataTransfer.effectAllowed = "move";
+        tr.classList.add("dragging");
+      });
+      tr.addEventListener("dragover", e => {
+        e.preventDefault();
+        if (tr.dataset.id === dragId) return;
+        clearDragOverMarks(tbody);
+        const before = (e.clientY - tr.getBoundingClientRect().top) < tr.offsetHeight / 2;
+        tr.classList.add(before ? "drag-over-top" : "drag-over-bottom");
+      });
+      tr.addEventListener("drop", e => {
+        e.preventDefault();
+        clearDragOverMarks(tbody);
+        if (!dragId || tr.dataset.id === dragId) return;
+        const before = (e.clientY - tr.getBoundingClientRect().top) < tr.offsetHeight / 2;
+        const dragTr = tbody.querySelector(`tr[data-id="${dragId}"]`);
+        if (!dragTr) return;
+        tbody.insertBefore(dragTr, before ? tr : tr.nextSibling);
+        // Ghi lại Order tuần tự theo thứ tự DOM mới, đồng bộ lên server
+        Array.from(tbody.children).forEach((row, idx) => {
+          store.updateField(moduleCfg.sheet, row.dataset.id, "Order", (idx + 1) * 10);
+        });
+        recomputeCodes(moduleCfg);
+        window.HPC_APP.refreshSyncBadgeSoon();
+        window.HPC_APP.render(); // vẽ lại để các ô mã (A1.1, A1.2...) hiện đúng theo thứ tự mới
+      });
+    });
+  }
+  function clearDragOverMarks(tbody) {
+    tbody.querySelectorAll(".drag-over-top,.drag-over-bottom").forEach(el => el.classList.remove("drag-over-top", "drag-over-bottom"));
+  }
+
   /* ================================ TABLE VIEW ================================ */
   function renderTable(root, moduleCfg, roleFilter) {
     const sheetData = store.getSheetData(moduleCfg.sheet);
@@ -117,6 +193,7 @@ window.HPC_ENGINE = (function () {
     }
 
     function draw() {
+      recomputeCodes(moduleCfg); // cập nhật mã A1/A1.1... theo thứ tự nhóm+dòng hiện tại (no-op nếu đã đúng)
       const rows = filteredRows();
       host.innerHTML = "";
       if (moduleCfg.groupByColumn) {
@@ -124,12 +201,12 @@ window.HPC_ENGINE = (function () {
         uniqueValues(rows, moduleCfg.groupByColumn).forEach(g => { if (!groups.includes(g)) groups.push(g); });
         if (!groups.length) { host.innerHTML = `<div class="card"><div class="empty-note">Chưa có dữ liệu. Bấm "+ Thêm nhóm" để bắt đầu.</div></div>`; return; }
         groups.forEach(g => {
-          const items = rows.filter(r => r[moduleCfg.groupByColumn] === g);
+          const items = sortByOrder(rows.filter(r => r[moduleCfg.groupByColumn] === g));
           if (!items.length && (search || contractorChip || statusChip !== "ALL")) return;
           host.appendChild(buildGroupBlock(moduleCfg, columns, g, items));
         });
       } else {
-        host.appendChild(buildFlatTable(moduleCfg, columns, rows));
+        host.appendChild(buildFlatTable(moduleCfg, columns, sortByOrder(rows)));
       }
     }
 
@@ -209,11 +286,12 @@ window.HPC_ENGINE = (function () {
     tblWrap.className = "tbl-wrap";
     const table = document.createElement("table");
     table.className = "dt";
-    table.innerHTML = `<thead><tr>${columns.map(c => `<th style="${c.width ? "width:" + c.width : ""}">${esc(c.label)}</th>`).join("")}<th style="width:30px"></th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th style="width:28px"></th>${columns.map(c => `<th style="${c.width ? "width:" + c.width : ""}">${esc(c.label)}</th>`).join("")}<th style="width:30px"></th></tr></thead>`;
     const tbody = document.createElement("tbody");
     rows.forEach(row => tbody.appendChild(buildRow(moduleCfg, columns, row)));
     table.appendChild(tbody);
     tblWrap.appendChild(table);
+    enableDragReorder(tbody, moduleCfg);
 
     const wrapper = document.createElement("div");
     wrapper.className = "card";
@@ -239,6 +317,11 @@ window.HPC_ENGINE = (function () {
   function buildRow(moduleCfg, columns, row) {
     const tr = document.createElement("tr");
     tr.dataset.id = row.ID;
+    const handleTd = document.createElement("td");
+    handleTd.className = "drag-handle";
+    handleTd.title = "Kéo để đổi thứ tự";
+    handleTd.textContent = "☰";
+    tr.appendChild(handleTd);
     columns.forEach(col => {
       const td = document.createElement("td");
       if (col.primary) td.className = "cell-primary";
