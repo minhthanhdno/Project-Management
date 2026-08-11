@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HELIX Project Control V2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+  <div class="spin"></div>
+  <div class="disp" style="font-size:16px">Đang tải dữ liệu từ Google Sheet…</div>
+</div>
+
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo-row">
+        <div class="mark" id="brandShort">HX</div>
+        <div>
+          <div class="name" id="brandName">HELIX PC</div>
+          <div class="sub">Project Control · V2</div>
+        </div>
+      </div>
+      <div class="proj" id="brandProj"></div>
+    </div>
+    <nav class="tabs" id="navTabs"></nav>
+    <div class="sidebar-foot">
+      <b>V2</b> Google Sheets Backend &middot; Đồng bộ 2 chiều<br>
+      Schema-driven &middot; Nhân rộng không cần sửa code
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="topbar">
+      <div>
+        <div class="page-title" id="pageTitle">Dashboard</div>
+        <div class="page-sub" id="pageSub"></div>
+      </div>
+      <div class="spacer"></div>
+      <span class="sync-pill" id="syncPill"><span class="dot"></span><span>—</span></span>
+      <select class="select-role" id="roleFilter"></select>
+      <button class="btn" id="btnRefresh" title="Kéo dữ liệu mới nhất từ Google Sheet">⟳ Làm mới</button>
+      <button class="btn" id="btnForceSync" title="Đẩy ngay các thay đổi đang chờ lên Google Sheet">⇧ Đồng bộ ngay</button>
+      <button class="btn" id="btnOpenSheet" title="Mở Google Sheet gốc">📄 Mở Sheet</button>
+      <button class="btn primary" id="btnExportExcel">⇩ Xuất Excel</button>
+    </div>
+    <div id="content">
+      <div id="viewRoot"></div>
+      <div class="footer-note">HELIX Project Control V2 · Backend: Google Sheets + Apps Script · Schema-driven, nhân rộng dự án chỉ cần đổi dữ liệu</div>
+    </div>
+  </main>
+</div>
+
+<script src="js/vendor/xlsx.full.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/api.js"></script>
+<script src="js/store.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
