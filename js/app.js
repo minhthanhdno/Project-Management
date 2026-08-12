@@ -76,14 +76,32 @@ window.HPC_APP = (function () {
     const btn = document.createElement("button");
     btn.className = "tab-btn" + (m.id === CURRENT_TAB ? " active" : "");
     btn.innerHTML = `<span class="ic">${m.icon}</span><span>${esc(m.label)}</span><span class="cnt">${countFor(m)}</span>`;
-    btn.onclick = () => { CURRENT_TAB = m.id; render(); };
+    btn.onclick = () => { 
+      CURRENT_TAB = m.id; 
+      // Đóng menu trên mobile khi chọn xong
+      document.getElementById("sidebar").classList.remove("open");
+      render(); 
+    };
     return btn;
   }
 
   function refreshNavCounts() { renderSidebar(); }
 
   /* ------------------------------- render topbar ------------------------------- */
+ /* ------------------------------- render topbar ------------------------------- */
   function renderTopbar() {
+    const topbar = document.getElementById("topbar");
+    
+    // Bổ sung nút Hamburger menu cho Mobile nếu chưa có
+    if (!document.getElementById("mobileNavBtn")) {
+      const btn = document.createElement("button");
+      btn.id = "mobileNavBtn";
+      btn.className = "mobile-nav-btn";
+      btn.innerHTML = "☰";
+      btn.onclick = () => document.getElementById("sidebar").classList.toggle("open");
+      topbar.insertBefore(btn, topbar.firstChild);
+    }
+
     const sel = document.getElementById("roleFilter");
     sel.innerHTML = `<option value="ALL">👁 Toàn liên danh (PM view)</option>` +
       cfg.ROLE_OPTIONS.map(c => `<option value="${esc(c)}">${esc(c)} — chỉ việc của mình</option>`).join("");

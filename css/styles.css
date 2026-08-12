@@ -144,6 +144,24 @@ select.cell-select{border:1px solid var(--line);border-radius:5px;padding:3px 5p
 .loading-screen .spin{width:34px;height:34px;border:3px solid rgba(255,255,255,.15);border-top-color:var(--teal-400);border-radius:50%;animation:spin 0.8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 
+
+/* ============ BỔ SUNG: V3 - Manager View & Cảnh báo trễ hạn ============ */
+.b-overdue { 
+  background: var(--red-100) !important; 
+  color: var(--red-500) !important; 
+  border: 1px solid #F0AAB2; 
+  animation: calBlink 2s infinite; 
+}
+@keyframes calBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* Lưới Timeline (Gantt Mini) cho Manager View */
+.cal-timeline-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.cal-timeline-table th, .cal-timeline-table td { border: 1px solid var(--line); padding: 6px; vertical-align: top; }
+.cal-timeline-table th { background: #F8FAFD; color: var(--ink-soft); text-align: center; font-weight: 600; white-space: nowrap; }
+.cal-timeline-emp { font-weight: 600; color: var(--navy-900); width: 130px; font-size: 12.5px; }
+.cal-timeline-table td:not(.cal-timeline-emp) { min-width: 120px; }
+
+
 /* ==========================================================================
    WORK CALENDAR — V3 (module.kind === "calendar")
    Bổ sung thuần tuý — không sửa/xoá style nào ở trên. Dùng lại tối đa biến
@@ -212,3 +230,63 @@ tr.dragging{opacity:.35;}
 tr.drag-over-top{box-shadow:inset 0 2px 0 var(--teal-500);}
 tr.drag-over-bottom{box-shadow:inset 0 -2px 0 var(--teal-500);}
 .group-code-tag{font-family:'JetBrains Mono';font-size:10.5px;background:rgba(255,255,255,.12);padding:2px 7px;border-radius:20px;margin-right:8px;}
+
+
+
+/* ============ BỔ SUNG: V3 - Dashboard Charts ============ */
+.chart-legend { font-size: 11.5px; display: flex; flex-direction: column; gap: 8px; }
+.legend-item { display: flex; align-items: center; gap: 8px; color: var(--ink); }
+.legend-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+.alert-section-title { font-size: 10.5px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; margin: 14px 0 8px; border-bottom: 1px solid var(--line-soft); padding-bottom: 4px; }
+.alert-section-title:first-child { margin-top: 0; }
+
+
+/* ============ BỔ SUNG: V3 - Trực quan hóa & Mobile Responsive ============ */
+/* Nút Hamburger menu cho Mobile */
+.mobile-nav-btn { display: none; background: transparent; border: none; font-size: 22px; color: var(--navy-900); cursor: pointer; padding: 0 14px 0 0; line-height: 1; }
+.kpi-grid, .two-col { transition: all 0.3s; }
+
+/* Nền thanh tiến độ trong ô % */
+td.cell-progress-bg { position: relative; z-index: 1; overflow: hidden; }
+td.cell-progress-bg .pct-fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: -1; opacity: 0.15; transition: width 0.3s ease, background 0.3s; }
+
+@media (max-width: 768px) {
+  /* Sidebar trượt ra/vào */
+  #sidebar { position: fixed; left: -250px; z-index: 999; width: 250px; transition: left 0.3s ease; box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
+  #sidebar.open { left: 0; }
+  .mobile-nav-btn { display: block; }
+  
+  /* Căn chỉnh lại layout chính */
+  #topbar { padding: 11px 16px; }
+  #content { padding: 14px 12px 60px; }
+  .two-col, .kpi-grid { grid-template-columns: 1fr; }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .toolbar .search-box { width: 100%; min-width: 0; }
+  .spacer { display: none; }
+  
+  /* Biến Bảng (Table) thành dạng Card View */
+  table.dt, table.dt thead, table.dt tbody, table.dt tr { display: block; width: 100%; }
+  table.dt thead { display: none; } /* Ẩn header ngang */
+  table.dt tr { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; padding: 10px; position: relative; }
+  table.dt td { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px dashed var(--line-soft); padding: 8px 0; border-top: none; }
+  table.dt td:last-child { border-bottom: none; }
+  
+  /* Dùng data-label truyền từ JS để làm tiêu đề cột giả */
+  table.dt td::before { content: attr(data-label); font-weight: 600; color: var(--ink-soft); font-size: 11px; margin-right: 15px; flex-shrink: 0; max-width: 40%; }
+  table.dt td.drag-handle { display: none; } /* Ẩn nút kéo thả trên mobile */
+  
+  input.cell-input, select.cell-select { text-align: right; max-width: 60%; }
+  input.pct-input { margin-left: auto; }
+}
+
+/* ============ BỔ SUNG: V3 - Kanban View ============ */
+.kanban-board { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 10px; align-items: flex-start; min-height: 60vh; }
+.kanban-col { flex: 1; min-width: 280px; background: #F8FAFD; border-radius: 8px; border: 1px solid var(--line); display: flex; flex-direction: column; max-height: 75vh; }
+.kanban-head { padding: 12px 14px; font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--line-soft); display: flex; justify-content: space-between; align-items: center; }
+.kanban-body { padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; min-height: 120px; }
+.kanban-card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px; cursor: grab; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: transform 0.1s, box-shadow 0.1s; }
+.kanban-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-2px); }
+.kanban-card:active { cursor: grabbing; }
+.kanban-card-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--navy-900); line-height: 1.4; }
+.kanban-card-meta { font-size: 11px; color: var(--ink-soft); display: flex; justify-content: space-between; align-items: center; }
+.kanban-col.drag-over { background: #EAF3FB; border-color: var(--teal-500); }

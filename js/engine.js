@@ -12,7 +12,7 @@
 window.HPC_ENGINE = (function () {
   const store = window.HPC_STORE;
   let COLLAPSED = {};
-  let CAL_STATE = { mode: "day", anchorDate: null }; // giữ trạng thái Ngày/Tuần/Danh sách qua các lần render lại (giống COLLAPSED)
+  let CAL_STATE = { mode: "day", anchorDate: null, fromDate: null, toDate: null };
 
   function esc(s) { return (s === undefined || s === null) ? "" : String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
   function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
@@ -21,19 +21,20 @@ window.HPC_ENGINE = (function () {
   function fmtDate(s) { if (!s) return ""; const d = new Date(s + "T00:00:00"); if (isNaN(d)) return s; return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }); }
 
   /* --------------------------- suy luận cột tự động --------------------------- */
-  function inferColumn(headerName) {
+ function inferColumn(headerName) {
     const h = headerName.toLowerCase();
-    if (h === "id") return null; // cột nội bộ, không hiển thị
+    if (h === "id") return null;
     if (/(done|xong|hoàn thành|confirm|xác nhận)/i.test(h)) return { key: headerName, label: headerName, type: "checkbox", width: "70px" };
     if (/(date|ngày|due|hạn|start|end|bắt đầu)/i.test(h)) return { key: headerName, label: headerName, type: "date" };
     if (/(pct|percent|%)/i.test(h)) return { key: headerName, label: headerName, type: "percent", width: "64px" };
+    
+    // THÊM DÒNG NÀY:
+    if (/(evidence|minh chứng|file|hồ sơ)/i.test(h)) return { key: headerName, label: headerName, type: "file" };
+    
     return { key: headerName, label: headerName, type: "text" };
   }
 
   // Kết hợp cấu hình module.columns (nếu có) với cột thực tế đang có trên Sheet:
-  // - Cột có trong config: dùng đúng type/label/options đã khai báo.
-  // - Cột có trên Sheet nhưng KHÔNG khai báo trong config: tự suy luận, thêm vào cuối.
-  // - Cột khai báo trong config nhưng Sheet chưa có: bỏ qua (Sheet là nguồn thật).
   function resolveColumns(moduleCfg, sheetColumns) {
     const declared = (moduleCfg.columns || []).filter(c => sheetColumns.includes(c.key));
     const declaredKeys = declared.map(c => c.key);
@@ -66,23 +67,17 @@ window.HPC_ENGINE = (function () {
   }
 
   /* ---------------------- V3: thứ tự kéo-thả + mã tự động ---------------------- */
-  // Sắp xếp theo cột "Order" (số, tự sinh khi kéo-thả) nếu có; dòng chưa có
-  // Order (chưa từng bị kéo) giữ nguyên thứ tự tự nhiên và xếp sau cùng.
   function sortByOrder(rows) {
     if (!rows.some(r => r.Order !== undefined && r.Order !== "")) return rows;
     return rows.slice().sort((a, b) => toNum(a.Order, 1e9) - toNum(b.Order, 1e9));
   }
 
-  // A, B, C ... Z, AA, AB ... (đủ dùng cho số giai đoạn thực tế)
   function letterFor(zeroBasedIndex) {
     let n = zeroBasedIndex + 1, s = "";
     while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
     return s;
   }
 
-  // Chỉ áp dụng cho module có groupByColumn VÀ cột đầu tiên là cột mã kiểu "#"
-  // (Code/Stt của tasks, checklist, software, documents) — tự nhận diện từ
-  // config.js sẵn có, KHÔNG cần thêm khai báo mới. Gọi lại sau khi thêm/xoá/kéo-thả.
   function recomputeCodes(moduleCfg) {
     if (!moduleCfg.groupByColumn || !moduleCfg.columns || moduleCfg.columns[0].label !== "#") return;
     const codeKey = moduleCfg.columns[0].key;
@@ -98,8 +93,6 @@ window.HPC_ENGINE = (function () {
     });
   }
 
-  // Gắn kéo-thả cho 1 <tbody>: kéo thả để đổi vị trí trong CÙNG bảng này, ghi
-  // "Order" tuần tự cho các dòng rồi tính lại mã (recomputeCodes) + lưu server.
   function enableDragReorder(tbody, moduleCfg) {
     let dragId = null;
     Array.from(tbody.children).forEach(tr => {
@@ -127,13 +120,12 @@ window.HPC_ENGINE = (function () {
         const dragTr = tbody.querySelector(`tr[data-id="${dragId}"]`);
         if (!dragTr) return;
         tbody.insertBefore(dragTr, before ? tr : tr.nextSibling);
-        // Ghi lại Order tuần tự theo thứ tự DOM mới, đồng bộ lên server
         Array.from(tbody.children).forEach((row, idx) => {
           store.updateField(moduleCfg.sheet, row.dataset.id, "Order", (idx + 1) * 10);
         });
         recomputeCodes(moduleCfg);
         window.HPC_APP.refreshSyncBadgeSoon();
-        window.HPC_APP.render(); // vẽ lại để các ô mã (A1.1, A1.2...) hiện đúng theo thứ tự mới
+        window.HPC_APP.render();
       });
     });
   }
@@ -142,6 +134,7 @@ window.HPC_ENGINE = (function () {
   }
 
   /* ================================ TABLE VIEW ================================ */
+  /* ================================ TABLE & KANBAN VIEW ================================ */
   function renderTable(root, moduleCfg, roleFilter) {
     const sheetData = store.getSheetData(moduleCfg.sheet);
     const columns = resolveColumns(moduleCfg, sheetData.columns);
@@ -153,6 +146,9 @@ window.HPC_ENGINE = (function () {
     let search = "";
     let contractorChip = null;
     let statusChip = "ALL";
+    let isKanban = false; // Trạng thái xem (Mặc định là Bảng)
+
+    const canKanban = !!moduleCfg.filterColumn && !!moduleCfg.filterOptions;
 
     const roleChipsHtml = moduleCfg.ownerColumn
       ? window.HPC_CONFIG.ROLE_OPTIONS.map(c => `<span class="filter-chip" data-c="${esc(c)}">${esc(c)}</span>`).join("")
@@ -166,6 +162,7 @@ window.HPC_ENGINE = (function () {
     toolbar.innerHTML = `
       <input class="search-box" placeholder="🔍 Tìm theo nội dung...">
       ${roleChipsHtml}${statusChipsHtml}
+      ${canKanban ? `<button class="btn sm" id="btnToggleKanban" style="margin-left: 8px; background: var(--navy-900); color: #fff;">▥ Kanban</button>` : ""}
       <span class="spacer" style="flex:1"></span>
       ${moduleCfg.groupByColumn ? `<button class="btn sm" data-act="add-group">+ Thêm nhóm</button>` : `<button class="btn sm" data-act="add-row">+ Thêm dòng</button>`}
     `;
@@ -174,13 +171,22 @@ window.HPC_ENGINE = (function () {
     wrap.appendChild(host);
     root.appendChild(wrap);
 
+    const btnToggleKanban = toolbar.querySelector("#btnToggleKanban");
+    if (btnToggleKanban) {
+      btnToggleKanban.onclick = () => {
+        isKanban = !isKanban;
+        btnToggleKanban.innerHTML = isKanban ? "▤ Dạng bảng" : "▥ Kanban";
+        draw();
+      };
+    }
+
     function filteredRows() {
       let rows = sheetData.rows.slice();
       if (roleFilter && roleFilter !== "ALL" && moduleCfg.ownerColumn) {
         rows = rows.filter(r => contractorMatches(r[moduleCfg.ownerColumn], roleFilter));
       }
       if (contractorChip) rows = rows.filter(r => contractorMatches(r[moduleCfg.ownerColumn], contractorChip));
-      if (moduleCfg.filterColumn && statusChip !== "ALL") rows = rows.filter(r => r[moduleCfg.filterColumn] === statusChip);
+      if (!isKanban && moduleCfg.filterColumn && statusChip !== "ALL") rows = rows.filter(r => r[moduleCfg.filterColumn] === statusChip);
       if (search) {
         const s = search.toLowerCase();
         rows = rows.filter(r => JSON.stringify(r).toLowerCase().includes(s));
@@ -193,9 +199,17 @@ window.HPC_ENGINE = (function () {
     }
 
     function draw() {
-      recomputeCodes(moduleCfg); // cập nhật mã A1/A1.1... theo thứ tự nhóm+dòng hiện tại (no-op nếu đã đúng)
+      recomputeCodes(moduleCfg); 
       const rows = filteredRows();
       host.innerHTML = "";
+      
+      // BỔ SUNG: Render Kanban thay vì Bảng nếu đang bật
+      if (isKanban && canKanban) {
+        host.appendChild(buildKanbanBoard(moduleCfg, columns, rows));
+        return;
+      }
+
+      // Giữ nguyên logic render Bảng cũ
       if (moduleCfg.groupByColumn) {
         const groups = uniqueValues(sheetData.rows, moduleCfg.groupByColumn);
         uniqueValues(rows, moduleCfg.groupByColumn).forEach(g => { if (!groups.includes(g)) groups.push(g); });
@@ -236,8 +250,75 @@ window.HPC_ENGINE = (function () {
     };
 
     draw();
-    return draw; // trả về hàm draw để re-render khi store thay đổi (auto-pull)
+    return draw; 
   }
+
+  ////////////////////////////
+  function buildKanbanBoard(moduleCfg, columns, rows) {
+    const board = document.createElement("div");
+    board.className = "kanban-board";
+    const statuses = moduleCfg.filterOptions;
+    let dragCardId = null;
+
+    statuses.forEach(status => {
+      const col = document.createElement("div");
+      col.className = "kanban-col";
+      
+      const colRows = rows.filter(r => r[moduleCfg.filterColumn] === status);
+      
+      col.innerHTML = `
+        <div class="kanban-head">
+          <span class="badge ${calStatusBadgeClass(moduleCfg, status)}">${esc(status)}</span>
+          <span class="mono" style="color:var(--ink-faint); font-size:11px">${colRows.length} thẻ</span>
+        </div>
+        <div class="kanban-body"></div>
+      `;
+      
+      const body = col.querySelector(".kanban-body");
+      colRows.forEach(row => {
+        const card = document.createElement("div");
+        card.className = "kanban-card";
+        card.draggable = true;
+        card.dataset.id = row.ID;
+        
+        const titleKey = moduleCfg.primaryColumn || (columns[1] ? columns[1].key : columns[0].key);
+        const metaKey = moduleCfg.ownerColumn || "";
+        const dateKey = moduleCfg.dueColumn || "";
+        
+        card.innerHTML = `
+          <div class="kanban-card-title">${esc(row[titleKey] || "(Chưa có tiêu đề)")}</div>
+          <div class="kanban-card-meta">
+            <span style="font-weight: 500">${metaKey ? esc(row[metaKey] || "") : ""}</span>
+            <span style="${row[dateKey] && row[dateKey] < todayStr() ? 'color:var(--red-500); font-weight:600' : ''}">${dateKey ? fmtDate(row[dateKey]) : ""}</span>
+          </div>
+        `;
+        
+        // Sự kiện kéo thả
+        card.addEventListener("dragstart", e => { dragCardId = row.ID; e.dataTransfer.effectAllowed = "move"; setTimeout(() => card.style.opacity = "0.5", 0); });
+        card.addEventListener("dragend", () => { dragCardId = null; card.style.opacity = "1"; });
+        
+        body.appendChild(card);
+      });
+      
+      // Xử lý cột nhận thẻ thả vào
+      col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drag-over"); });
+      col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
+      col.addEventListener("drop", e => {
+        e.preventDefault();
+        col.classList.remove("drag-over");
+        if (dragCardId) {
+          store.updateField(moduleCfg.sheet, dragCardId, moduleCfg.filterColumn, status);
+          window.HPC_APP.refreshSyncBadgeSoon();
+          window.HPC_APP.render();
+        }
+      });
+      
+      board.appendChild(col);
+    });
+    
+    return board;
+  }
+  /////////////////////
 
   function buildGroupBlock(moduleCfg, columns, groupName, items) {
     const block = document.createElement("div");
@@ -314,7 +395,7 @@ window.HPC_ENGINE = (function () {
     return wrapper;
   }
 
-  function buildRow(moduleCfg, columns, row) {
+ function buildRow(moduleCfg, columns, row) {
     const tr = document.createElement("tr");
     tr.dataset.id = row.ID;
     const handleTd = document.createElement("td");
@@ -324,6 +405,9 @@ window.HPC_ENGINE = (function () {
     tr.appendChild(handleTd);
     columns.forEach(col => {
       const td = document.createElement("td");
+      // Bổ sung thuộc tính data-label để phục vụ giao diện Mobile Card View
+      td.setAttribute("data-label", col.label);
+      
       if (col.primary) td.className = "cell-primary";
       if (col.key === (columns[0] && columns[0].key)) td.classList.add("cell-code");
       const val = row[col.key];
@@ -344,6 +428,17 @@ window.HPC_ENGINE = (function () {
     };
     delTd.appendChild(delBtn);
     tr.appendChild(delTd);
+
+    // --- BỔ SUNG: Trực quan hóa màu sắc cho cả dòng (Row Highlighting) ---
+    if (moduleCfg.doneColumn && truthy(row[moduleCfg.doneColumn])) {
+      tr.style.opacity = "0.55";
+      tr.style.background = "var(--bg)"; // Làm mờ và đổi nền dòng đã xong
+    }
+    if (moduleCfg.alertColumn && row[moduleCfg.alertColumn] === moduleCfg.alertValue && row[moduleCfg.statusColumnForAlert] !== moduleCfg.alertExcludeStatus) {
+      tr.style.boxShadow = "inset 4px 0 0 var(--red-500)"; // Viền đỏ cảnh báo mức HIGH
+    }
+    // ----------------------------------------------------------------------
+
     return tr;
   }
 
@@ -364,11 +459,25 @@ window.HPC_ENGINE = (function () {
       inp.addEventListener("change", () => onCommit(inp.value));
       td.appendChild(inp);
     } else if (col.type === "percent") {
+      // --- BỔ SUNG: Thanh progress bar nằm chìm dưới ô nhập liệu ---
+      td.classList.add("cell-progress-bg");
+      const fill = document.createElement("div");
+      fill.className = "pct-fill";
+      const pctValue = clamp(toNum(val, 0), 0, 100);
+      fill.style.width = pctValue + "%";
+      fill.style.background = pctColor(pctValue);
+      td.appendChild(fill);
+      
       const inp = document.createElement("input");
       inp.type = "number"; inp.min = 0; inp.max = 100; inp.className = "pct-input"; inp.value = val || 0;
-      inp.addEventListener("change", () => onCommit(clamp(toNum(inp.value, 0), 0, 100)));
+      inp.addEventListener("change", () => {
+        const newVal = clamp(toNum(inp.value, 0), 0, 100);
+        fill.style.width = newVal + "%";
+        fill.style.background = pctColor(newVal);
+        onCommit(newVal);
+      });
       td.appendChild(inp);
-      td.appendChild(Object.assign(document.createElement("span"), { textContent: "%", style: "color:var(--ink-faint);font-size:10.5px;margin-left:2px" }));
+      td.appendChild(Object.assign(document.createElement("span"), { textContent: "%", style: "color:var(--ink-faint);font-size:10.5px;margin-left:2px; position:relative; z-index:2" }));
     } else if (col.type === "checkbox") {
       const inp = document.createElement("input");
       inp.type = "checkbox"; inp.className = "chk"; inp.checked = truthy(val);
@@ -391,7 +500,72 @@ window.HPC_ENGINE = (function () {
       if (col.colorMap && col.colorMap[val]) sel.classList.add(badgeColor(col.colorMap[val]));
       sel.addEventListener("change", () => { onCommit(sel.value); window.HPC_APP.render(); });
       td.appendChild(sel);
-    } else {
+    
+    
+    } else if (col.type === "file") {
+      td.innerHTML = "";
+      const wrap = document.createElement("div");
+      wrap.style.display = "flex"; wrap.style.gap = "6px"; wrap.style.alignItems = "center";
+      
+      const inp = document.createElement("input");
+      inp.className = "cell-input";
+      inp.value = val || "";
+      inp.style.flex = "1";
+      inp.style.minWidth = "100px";
+      inp.addEventListener("blur", () => onCommit(inp.value.trim()));
+      inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+      
+      const btn = document.createElement("button");
+      btn.className = "btn sm";
+      btn.textContent = "📎";
+      btn.title = "Tải file lên Google Drive";
+      btn.style.padding = "2px 6px";
+      
+      const fileInp = document.createElement("input");
+      fileInp.type = "file";
+      fileInp.style.display = "none";
+      fileInp.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { alert("File quá lớn! Vui lòng chọn file dưới 5MB."); return; } // Giới hạn 5MB để không treo browser
+        btn.textContent = "⌛"; btn.disabled = true;
+        try {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const base64 = reader.result.split(",")[1];
+            const res = await window.HPC_API.upload(file.name, file.type || "application/octet-stream", base64);
+            if (res && res.url) { inp.value = res.url; onCommit(res.url); }
+            btn.textContent = "📎"; btn.disabled = false;
+          };
+          reader.readAsDataURL(file);
+        } catch (err) {
+          alert("Lỗi tải file: " + err.message);
+          btn.textContent = "📎"; btn.disabled = false;
+        }
+      };
+      
+      btn.onclick = () => fileInp.click();
+      
+      // Thêm nút mở link nhanh nếu đã có link
+      if (val && val.startsWith("http")) {
+        const link = document.createElement("a");
+        link.href = val; link.target = "_blank"; link.textContent = "↗";
+        link.style.textDecoration = "none"; link.style.color = "var(--teal-500)";
+        link.style.fontWeight = "bold";
+        wrap.appendChild(link);
+      }
+      
+      wrap.appendChild(inp);
+      wrap.appendChild(btn);
+      wrap.appendChild(fileInp);
+      td.appendChild(wrap);
+    
+    } 
+
+    
+    
+    
+    else {
       td.textContent = val || "";
     }
   }
@@ -439,16 +613,32 @@ window.HPC_ENGINE = (function () {
       <div class="k-value">${value}</div><div class="k-foot">${esc(foot)}</div>
       ${noBar ? "" : `<div class="k-bar"><div style="width:${clamp(pct, 0, 100)}%;background:${color}"></div></div>`}</div>`;
   }
-
-  function renderDashboard(root, allModules, roleFilter) {
+function renderDashboard(root, allModules, roleFilter) {
     const stats = {};
-    allModules.forEach(m => { stats[m.id] = computeModuleStats(m, roleFilter); });
+    let totalIssues = 0, openIssues = 0, inProgIssues = 0, closedIssues = 0;
+
+    allModules.forEach(m => { 
+      stats[m.id] = computeModuleStats(m, roleFilter); 
+      
+      // Trích xuất riêng data cho Biểu đồ Issue & Rủi ro
+      if (m.id === "issues") {
+        const rows = store.getSheetData(m.sheet).rows;
+        let filtered = rows;
+        if (roleFilter && roleFilter !== "ALL" && m.ownerColumn) {
+          filtered = rows.filter(r => contractorMatches(r[m.ownerColumn], roleFilter));
+        }
+        totalIssues = filtered.length;
+        openIssues = filtered.filter(r => r.Status === "OPEN").length;
+        inProgIssues = filtered.filter(r => r.Status === "IN_PROGRESS").length;
+        closedIssues = filtered.filter(r => r.Status === "CLOSED").length;
+      }
+    });
 
     const kpiModules = allModules.filter(m => stats[m.id].avgProgress !== null || stats[m.id].alertRows.length || m.dueColumn).slice(0, 4);
     const kpisHtml = allModules.slice(0, 4).map(m => {
       const s = stats[m.id];
       if (s.alertRows && m.alertColumn) {
-        return kpiCard(m.icon, m.label, s.alertRows.length, `${s.alertRows.length} mức ${m.alertValue} đang cần xử lý`, 0, "var(--red-500)", true);
+        return kpiCard(m.icon, m.label, s.alertRows.length, `${s.alertRows.length} mức ${m.alertValue} cần xử lý`, 0, "var(--red-500)", true);
       }
       if (s.avgProgress !== null) {
         return kpiCard(m.icon, m.label, s.avgProgress + "%", `${s.doneCount || 0}/${s.total} hoàn thành`, s.avgProgress, pctColor(s.avgProgress));
@@ -464,23 +654,56 @@ window.HPC_ENGINE = (function () {
 
     const ownerModules = allModules.filter(m => m.ownerColumn);
 
+    // Xử lý html cho Biểu đồ Donut (CSS thuần)
+    let issueChartHtml = `<div class="empty-note">Chưa có dữ liệu Issue.</div>`;
+    if (totalIssues > 0) {
+      const pOpen = Math.round((openIssues / totalIssues) * 100);
+      const pInProg = Math.round((inProgIssues / totalIssues) * 100);
+      const pClosed = Math.round((closedIssues / totalIssues) * 100);
+
+      const deg1 = Math.round((openIssues / totalIssues) * 360);
+      const deg2 = deg1 + Math.round((inProgIssues / totalIssues) * 360);
+
+      issueChartHtml = `
+        <div style="display:flex; align-items:center; gap: 30px; padding: 10px 0; justify-content: center;">
+          <div style="position:relative; width: 130px; height: 130px; border-radius: 50%; background: conic-gradient(var(--red-500) 0deg ${deg1}deg, var(--amber-500) ${deg1}deg ${deg2}deg, var(--green-500) ${deg2}deg 360deg); box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+            <div style="position:absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 85px; height: 85px; background: var(--card); border-radius: 50%; display:flex; align-items:center; justify-content:center; flex-direction:column; box-shadow: inset 0 2px 5px rgba(0,0,0,0.05);">
+              <b style="font-size:22px; font-family:'Space Grotesk'; color:var(--navy-900); line-height: 1;">${totalIssues}</b>
+              <span style="font-size:10px; color:var(--ink-soft); text-transform:uppercase; font-weight: 600; margin-top: 2px;">Issues</span>
+            </div>
+          </div>
+          <div class="chart-legend">
+            <div class="legend-item"><div class="legend-dot" style="background:var(--red-500)"></div><span><b>${openIssues}</b> OPEN (${pOpen}%)</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--amber-500)"></div><span><b>${inProgIssues}</b> IN PROGRESS (${pInProg}%)</span></div>
+            <div class="legend-item"><div class="legend-dot" style="background:var(--green-500)"></div><span><b>${closedIssues}</b> CLOSED (${pClosed}%)</span></div>
+          </div>
+        </div>`;
+    }
+
     root.innerHTML = `
       <div class="grid kpi-grid">${kpisHtml}</div>
+      <div class="two-col" style="margin-bottom: 14px;">
+        <div>
+          <div class="section-title">🍩 Trạng thái Issue & Rủi ro</div>
+          <div class="card" style="height: 190px; display: flex; align-items: center; justify-content: center;">${issueChartHtml}</div>
+        </div>
+        <div>
+          <div class="section-title">📊 Tiến độ theo nhà thầu</div>
+          <div class="card" id="dashOwner" style="height: 190px; overflow-y: auto;"></div>
+        </div>
+      </div>
       <div class="two-col">
         <div>
-          <div class="section-title">Tiến độ theo nhà thầu</div>
-          <div class="card" id="dashOwner"></div>
-          <div class="section-title">Tổng quan theo module</div>
+          <div class="section-title">📦 Tổng quan theo phân hệ</div>
           <div class="card" id="dashModules"></div>
         </div>
         <div>
-          <div class="section-title">⏰ Hạng mục quá hạn</div>
-          <div class="card" id="dashOverdue"></div>
-          <div class="section-title">🔴 Cảnh báo mức cao</div>
-          <div class="card" id="dashAlerts"></div>
+          <div class="section-title">⏰ Hạng mục quá hạn & Cảnh báo</div>
+          <div class="card" id="dashAlertsOd" style="max-height: 320px; overflow-y: auto; padding-right: 8px;"></div>
         </div>
       </div>`;
 
+    // Render Contractor Progress
     const ownerHost = root.querySelector("#dashOwner");
     if (ownerModules.length) {
       const combined = {};
@@ -495,9 +718,10 @@ window.HPC_ENGINE = (function () {
         return `<div class="contractor-row"><div class="c-name">${esc(w)}</div>
           <div class="c-bar"><div class="pbar"><div style="width:${pct}%;background:${pctColor(pct)}"></div></div></div>
           <div class="c-pct">${pct}%</div></div>`;
-      }).join("") + `<div style="font-size:11px;color:var(--ink-faint);margin-top:8px">Tổng hợp từ: ${ownerModules.map(m => m.label).join(", ")}</div>`;
+      }).join("") + `<div style="font-size:11px;color:var(--ink-faint);margin-top:12px; text-align: right;">Tổng hợp từ: ${ownerModules.map(m => m.label).join(", ")}</div>`;
     } else ownerHost.innerHTML = `<div class="empty-note">Chưa có module nào gắn cột nhà thầu.</div>`;
 
+    // Render Module Progress
     const modHost = root.querySelector("#dashModules");
     modHost.innerHTML = allModules.map(m => {
       const s = stats[m.id];
@@ -507,26 +731,33 @@ window.HPC_ENGINE = (function () {
         <div class="c-pct">${s.avgProgress !== null ? pct + "%" : s.total}</div></div>`;
     }).join("");
 
-    const odHost = root.querySelector("#dashOverdue");
-    odHost.innerHTML = overdueAll.length ? overdueAll.slice(0, 10).map(({ row, module }) => `
-      <div class="alert-item"><div class="alert-dot" style="background:var(--red-500)"></div>
-        <div><div class="a-title">${esc(row[module.primaryColumn] || row[module.columns[0].key] || "")}</div>
-        <div class="a-meta">${esc(module.label)} · ${esc(row[module.ownerColumn] || "—")} · Hạn: ${fmtDate(row[module.dueColumn])}</div></div></div>`).join("")
-      : `<div class="empty-note">✓ Không có hạng mục nào quá hạn.</div>`;
-
-    const alHost = root.querySelector("#dashAlerts");
-    alHost.innerHTML = alertAll.length ? alertAll.map(({ row, module }) => `
-      <div class="alert-item"><div class="alert-dot" style="background:var(--red-500)"></div>
-        <div><div class="a-title">${esc(row[module.primaryColumn] || row[module.columns[0].key] || "")}</div>
-        <div class="a-meta">${esc(module.label)} · ${esc(row[module.ownerColumn] || "—")}</div></div></div>`).join("")
-      : `<div class="empty-note">✓ Không có cảnh báo nào đang mở.</div>`;
+    // Render Alerts & Overdue (Gộp chung để tối ưu UX)
+    const alHost = root.querySelector("#dashAlertsOd");
+    let alertsHtml = "";
+    
+    if (overdueAll.length) {
+      alertsHtml += `<div class="alert-section-title">Quá hạn (${overdueAll.length})</div>`;
+      alertsHtml += overdueAll.slice(0, 15).map(({ row, module }) => `
+        <div class="alert-item"><div class="alert-dot" style="background:var(--red-500); animation: pulse 1s infinite;"></div>
+          <div><div class="a-title">${esc(row[module.primaryColumn] || row[module.columns[0].key] || "")}</div>
+          <div class="a-meta">${esc(module.label)} · ${esc(row[module.ownerColumn] || "—")} · Hạn: <b style="color:var(--red-500)">${fmtDate(row[module.dueColumn])}</b></div></div></div>`).join("");
+    }
+    
+    if (alertAll.length) {
+      alertsHtml += `<div class="alert-section-title">Cảnh báo Mức Cao (${alertAll.length})</div>`;
+      alertsHtml += alertAll.map(({ row, module }) => `
+        <div class="alert-item"><div class="alert-dot" style="background:var(--amber-500)"></div>
+          <div><div class="a-title">${esc(row[module.primaryColumn] || row[module.columns[0].key] || "")}</div>
+          <div class="a-meta">${esc(module.label)} · ${esc(row[module.ownerColumn] || "—")}</div></div></div>`).join("");
+    }
+    
+    if (!alertsHtml) alertsHtml = `<div class="empty-note" style="text-align: center; padding: 30px 10px;">🎉<br><br>Tuyệt vời!<br>Không có hạng mục nào trễ hạn hay cảnh báo rủi ro.</div>`;
+    
+    alHost.innerHTML = alertsHtml;
   }
 
   /* ============================================================================
      WORK CALENDAR — V3 (module.kind === "calendar")
-     Tái sử dụng tối đa: buildFlatTable/buildRow/renderCell/renderTable ở trên
-     cho chế độ "Danh sách" (= Manager view). Chỉ viết mới phần lưới Ngày/Tuần
-     và popup nhập nhanh, vì đây là 2 kiểu hiển thị chưa có sẵn trong engine.
      ============================================================================ */
   const CAL_EMP_KEY = "hpc_current_employee";
 
@@ -537,8 +768,6 @@ window.HPC_ENGINE = (function () {
     try { localStorage.setItem(CAL_EMP_KEY, name || ""); } catch (e) { /* ignore */ }
   }
 
-  // Gợi ý danh sách tên nhân viên: hợp nhất tên đã từng nhập trong WorkSchedule
-  // + cột Name của sheet Đầu mối liên hệ (nếu có) — không tạo bảng Employee mới.
   function calEmployeeSuggestions(moduleCfg) {
     const names = new Set();
     store.getSheetData(moduleCfg.sheet).rows.forEach(r => { if (r[moduleCfg.employeeColumn]) names.add(String(r[moduleCfg.employeeColumn]).trim()); });
@@ -567,9 +796,14 @@ window.HPC_ENGINE = (function () {
     return days;
   }
 
-  function calStatusBadgeClass(moduleCfg, status) {
+  function calStatusBadgeClass(moduleCfg, status, row) {
     const color = (moduleCfg.statusColorMap || {})[status] || "gray";
-    return badgeColor(color);
+    let badge = badgeColor(color);
+    // Logic trễ hạn: Ngày việc < Hôm nay VÀ chưa Hoàn thành/Hủy
+    if (row && row[moduleCfg.dateColumn] && row[moduleCfg.dateColumn] < todayStr() && status !== "Hoàn thành" && status !== "Hủy") {
+      badge += " b-overdue";
+    }
+    return badge;
   }
 
   function calEventCard(moduleCfg, row, opts) {
@@ -582,7 +816,7 @@ window.HPC_ENGINE = (function () {
         <div class="cal-event-title">${esc(row[moduleCfg.titleColumn] || "(chưa đặt tên)")}</div>
         <div class="cal-event-meta">${opts.showEmployee ? esc(row[moduleCfg.employeeColumn] || "—") + " · " : ""}${esc(row[moduleCfg.taskNameColumn] || row[moduleCfg.projectColumn] || "")}</div>
       </div>
-      <span class="badge ${calStatusBadgeClass(moduleCfg, row[moduleCfg.statusColumn])}">${esc(row[moduleCfg.statusColumn] || "")}</span>
+      <span class="badge ${calStatusBadgeClass(moduleCfg, row[moduleCfg.statusColumn], row)}">${esc(row[moduleCfg.statusColumn] || "")}</span>
       <span class="row-del cal-event-del" title="Xoá">✕</span>`;
     div.querySelector(".cal-event-del").onclick = e => {
       e.stopPropagation();
@@ -602,13 +836,21 @@ window.HPC_ENGINE = (function () {
     backdrop.className = "hpc-modal-backdrop";
     const taskOpts = calTaskOptions(moduleCfg);
     const defaultDate = (editing && editing[moduleCfg.dateColumn]) || opts.date || todayStr();
+    
     backdrop.innerHTML = `
       <div class="hpc-modal">
         <div class="hpc-modal-title">${editing ? "Sửa công việc" : "+ Thêm công việc"}</div>
         <div class="form-row"><label>Ngày</label><input type="date" class="form-field" id="calfDate" value="${esc(defaultDate)}"></div>
         <div class="form-row two"><div><label>Từ</label><input type="time" class="form-field" id="calfStart" value="${esc((editing && editing[moduleCfg.startColumn]) || "08:00")}"></div>
           <div><label>Đến</label><input type="time" class="form-field" id="calfEnd" value="${esc((editing && editing[moduleCfg.endColumn]) || "09:00")}"></div></div>
-        <div class="form-row"><label>Dự án</label><input type="text" class="form-field" id="calfProject" value="${esc((editing && editing[moduleCfg.projectColumn]) || window.HPC_CONFIG.PROJECT_NAME)}" readonly></div>
+        
+        <div class="form-row"><label>Nơi làm việc / Dự án</label>
+          <input list="calProjectList" class="form-field" id="calfProject" value="${esc((editing && editing[moduleCfg.projectColumn]) || window.HPC_CONFIG.PROJECT_NAME)}">
+          <datalist id="calProjectList">
+            ${(window.HPC_CONFIG.PROJECT_OPTIONS || [window.HPC_CONFIG.PROJECT_NAME]).map(p => `<option value="${esc(p)}">`).join("")}
+          </datalist>
+        </div>
+
         <div class="form-row"><label>Task liên quan (nếu có)</label>
           <select class="form-field" id="calfTask">
             <option value="">— Không chọn —</option>
@@ -649,7 +891,7 @@ window.HPC_ENGINE = (function () {
         [moduleCfg.dateColumn]: backdrop.querySelector("#calfDate").value,
         [moduleCfg.startColumn]: backdrop.querySelector("#calfStart").value,
         [moduleCfg.endColumn]: backdrop.querySelector("#calfEnd").value,
-        [moduleCfg.projectColumn]: window.HPC_CONFIG.PROJECT_NAME,
+        [moduleCfg.projectColumn]: backdrop.querySelector("#calfProject").value.trim() || window.HPC_CONFIG.PROJECT_NAME,
         [moduleCfg.taskIdColumn]: taskId,
         [moduleCfg.taskNameColumn]: taskName,
         [moduleCfg.titleColumn]: title,
@@ -666,7 +908,13 @@ window.HPC_ENGINE = (function () {
   }
 
   function renderCalendar(root, moduleCfg) {
-    if (!CAL_STATE.anchorDate) CAL_STATE.anchorDate = todayStr();
+    if (!CAL_STATE.anchorDate) {
+      CAL_STATE.anchorDate = todayStr();
+      const d = new Date(); d.setDate(d.getDate() - d.getDay() + 1);
+      CAL_STATE.fromDate = d.toISOString().slice(0, 10);
+      const d2 = new Date(d); d2.setDate(d.getDate() + 6);
+      CAL_STATE.toDate = d2.toISOString().slice(0, 10);
+    }
     let currentEmployee = calGetCurrentEmployee();
 
     const wrap = document.createElement("div");
@@ -674,15 +922,23 @@ window.HPC_ENGINE = (function () {
     toolbar.className = "toolbar cal-toolbar";
     toolbar.innerHTML = `
       <span style="font-size:12.3px;color:var(--ink-soft);font-weight:600">Bạn là:</span>
-      <input list="calEmpList" class="search-box" id="calEmployeeInput" style="min-width:170px" placeholder="Nhập tên của bạn…" value="${esc(currentEmployee)}">
+      <input list="calEmpList" class="search-box" id="calEmployeeInput" style="min-width:140px" placeholder="Nhập tên…" value="${esc(currentEmployee)}">
       <datalist id="calEmpList"></datalist>
       <span class="filter-chip${CAL_STATE.mode === "day" ? " active" : ""}" data-mode="day">Ngày</span>
       <span class="filter-chip${CAL_STATE.mode === "week" ? " active" : ""}" data-mode="week">Tuần</span>
-      <span class="filter-chip${CAL_STATE.mode === "list" ? " active" : ""}" data-mode="list">Danh sách (Manager view)</span>
+      <span class="filter-chip${CAL_STATE.mode === "list" ? " active" : ""}" data-mode="list">Tổng quan (Manager)</span>
+      
       <span class="spacer" style="flex:1"></span>
-      <button class="btn sm" id="calPrev">‹</button>
-      <button class="btn sm" id="calToday">Hôm nay</button>
-      <button class="btn sm" id="calNext">›</button>
+
+      <span id="calDateFilters" style="display:flex; gap: 8px; align-items:center; margin-right: 12px; ${CAL_STATE.mode === 'list' ? '' : 'display:none'}">
+        <input type="date" class="search-box" style="padding:4px 8px" id="calFromDate" value="${CAL_STATE.fromDate}">
+        <span>-</span>
+        <input type="date" class="search-box" style="padding:4px 8px" id="calToDate" value="${CAL_STATE.toDate}">
+      </span>
+
+      <button class="btn sm" id="calPrev" ${CAL_STATE.mode === 'list' ? 'style="display:none"' : ''}>‹</button>
+      <button class="btn sm" id="calToday" ${CAL_STATE.mode === 'list' ? 'style="display:none"' : ''}>Hôm nay</button>
+      <button class="btn sm" id="calNext" ${CAL_STATE.mode === 'list' ? 'style="display:none"' : ''}>›</button>
       <button class="btn primary sm" id="calAdd">+ Thêm công việc</button>
     `;
     wrap.appendChild(toolbar);
@@ -693,6 +949,7 @@ window.HPC_ENGINE = (function () {
 
     const empList = toolbar.querySelector("#calEmpList");
     empList.innerHTML = calEmployeeSuggestions(moduleCfg).map(n => `<option value="${esc(n)}">`).join("");
+    
     toolbar.querySelector("#calEmployeeInput").addEventListener("change", e => {
       currentEmployee = e.target.value.trim();
       calSetCurrentEmployee(currentEmployee);
@@ -703,9 +960,17 @@ window.HPC_ENGINE = (function () {
       chip.onclick = () => {
         CAL_STATE.mode = chip.dataset.mode;
         toolbar.querySelectorAll("[data-mode]").forEach(x => x.classList.toggle("active", x === chip));
+        toolbar.querySelector("#calDateFilters").style.display = CAL_STATE.mode === "list" ? "flex" : "none";
+        toolbar.querySelector("#calPrev").style.display = CAL_STATE.mode === "list" ? "none" : "";
+        toolbar.querySelector("#calToday").style.display = CAL_STATE.mode === "list" ? "none" : "";
+        toolbar.querySelector("#calNext").style.display = CAL_STATE.mode === "list" ? "none" : "";
         draw();
       };
     });
+
+    toolbar.querySelector("#calFromDate").onchange = e => { CAL_STATE.fromDate = e.target.value; draw(); };
+    toolbar.querySelector("#calToDate").onchange = e => { CAL_STATE.toDate = e.target.value; draw(); };
+
     toolbar.querySelector("#calAdd").onclick = () => {
       calPopupForm(moduleCfg, { date: CAL_STATE.anchorDate, employee: currentEmployee || "(Chưa đặt tên)", onSaved: draw });
     };
@@ -761,7 +1026,7 @@ window.HPC_ENGINE = (function () {
         if (!dayRows.length) body.innerHTML = `<div class="cal-weekcol-empty">—</div>`;
         dayRows.forEach(r => {
           const ev = document.createElement("div");
-          ev.className = "cal-mini-event badge " + calStatusBadgeClass(moduleCfg, r[moduleCfg.statusColumn]);
+          ev.className = "cal-mini-event badge " + calStatusBadgeClass(moduleCfg, r[moduleCfg.statusColumn], r);
           ev.textContent = (r[moduleCfg.startColumn] || "") + " " + (r[moduleCfg.titleColumn] || "");
           ev.title = r[moduleCfg.titleColumn] || "";
           ev.onclick = () => calPopupForm(moduleCfg, { row: r, employee: currentEmployee, onSaved: draw });
@@ -778,14 +1043,69 @@ window.HPC_ENGINE = (function () {
     }
 
     function drawList() {
-      // Manager view = TÁI SỬ DỤNG NGUYÊN engine.renderTable() có sẵn (search, lọc,
-      // sửa inline, thêm/xoá dòng) — không viết lại bảng dữ liệu.
-      const note = document.createElement("div");
-      note.className = "empty-note";
-      note.style.padding = "0 2px 10px";
-      note.textContent = "Xem lịch của tất cả nhân viên trong dự án — dùng ô tìm kiếm để lọc theo tên nhân viên.";
-      host.appendChild(note);
-      renderTable(host, Object.assign({}, moduleCfg, { ownerColumn: undefined, groupByColumn: undefined }), "ALL");
+      const from = CAL_STATE.fromDate;
+      const to = CAL_STATE.toDate;
+      if (!from || !to || from > to) {
+        host.innerHTML = `<div class="empty-note">Vui lòng chọn khoảng thời gian hợp lệ.</div>`; return;
+      }
+
+      const allRows = store.getSheetData(moduleCfg.sheet).rows;
+      const rowsInRange = allRows.filter(r => r[moduleCfg.dateColumn] >= from && r[moduleCfg.dateColumn] <= to);
+      const displayRows = currentEmployee ? rowsInRange.filter(r => (r[moduleCfg.employeeColumn] || "").trim().toLowerCase() === currentEmployee.toLowerCase()) : rowsInRange;
+
+      const dateList = [];
+      let curr = new Date(from);
+      const end = new Date(to);
+      while (curr <= end && dateList.length < 31) { 
+        dateList.push(curr.toISOString().slice(0, 10));
+        curr.setDate(curr.getDate() + 1);
+      }
+
+      const emps = uniqueValues(displayRows, moduleCfg.employeeColumn).filter(Boolean).sort();
+      if (!emps.length) emps.push(currentEmployee || "Tất cả nhân viên");
+
+      const wrapper = document.createElement("div");
+      wrapper.style.overflowX = "auto";
+      wrapper.style.background = "var(--card)";
+      wrapper.style.borderRadius = "var(--radius)";
+      wrapper.style.border = "1px solid var(--line)";
+      wrapper.style.padding = "0";
+
+      let html = `<table class="cal-timeline-table"><thead><tr>
+        <th style="position:sticky; left:0; z-index:2;">Nhân viên</th>
+        ${dateList.map(d => {
+          const wd = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"][new Date(d).getDay()];
+          return `<th>${wd}<br><span class="mono">${d.slice(8, 10)}/${d.slice(5, 7)}</span></th>`;
+        }).join("")}
+      </tr></thead><tbody>`;
+
+      emps.forEach(emp => {
+        html += `<tr>
+          <td class="cal-timeline-emp" style="position:sticky; left:0; background:#fff; z-index:1;">${esc(emp)}</td>
+          ${dateList.map(d => {
+            const tasks = displayRows.filter(r => (r[moduleCfg.employeeColumn] || "") === (emp === "Tất cả nhân viên" ? "" : emp) && r[moduleCfg.dateColumn] === d);
+            tasks.sort((a, b) => (a[moduleCfg.startColumn] || "").localeCompare(b[moduleCfg.startColumn] || ""));
+            let cellHtml = tasks.map(t => {
+              const badge = calStatusBadgeClass(moduleCfg, t[moduleCfg.statusColumn], t);
+              return `<div class="cal-mini-event badge ${badge}" style="margin-bottom:5px; white-space:normal; cursor:pointer;" 
+                           title="[${esc(t[moduleCfg.projectColumn])}] ${esc(t[moduleCfg.titleColumn])}" 
+                           onclick="window._editCalEvent('${t.ID}')">
+                <b class="mono" style="font-size:10px">${esc(t[moduleCfg.startColumn])}</b> ${esc(t[moduleCfg.titleColumn])}
+              </div>`;
+            }).join("");
+            return `<td>${cellHtml}</td>`;
+          }).join("")}
+        </tr>`;
+      });
+
+      html += `</tbody></table>`;
+      wrapper.innerHTML = html;
+      host.appendChild(wrapper);
+
+      window._editCalEvent = (id) => {
+         const r = allRows.find(x => x.ID === id);
+         if(r) calPopupForm(moduleCfg, { row: r, employee: r[moduleCfg.employeeColumn], onSaved: draw });
+      };
     }
 
     draw();

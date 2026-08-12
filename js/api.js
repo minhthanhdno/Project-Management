@@ -61,5 +61,8 @@ window.HPC_API = (function () {
     renameGroup(sheet, groupColumn, oldValue, newValue) {
       return post({ action: "renameGroup", sheet, groupColumn, oldValue, newValue });
     },
+    upload(filename, mimeType, base64) {
+      return post({ action: "upload", filename, mimeType, base64 });
+    }
   };
 })();
