@@ -1,6 +1,6 @@
 /**
  * =============================================================================
- *  HELIX PROJECT CONTROL — V2 Backend (Google Apps Script)
+ *  HELIX PROJECT CONTROL — V2 & V3 Backend (Google Apps Script)
  * =============================================================================
  *  CÁCH CÀI ĐẶT:
  *  1. Mở Google Sheet dự án (đã có các tab dữ liệu, xem seed/*.xlsx mẫu).
@@ -53,6 +53,7 @@ function doPost(e) {
     else if (action === 'delete') result = deleteRow_(body.sheet, body.id);
     else if (action === 'deleteGroup') result = deleteGroup_(body.sheet, body.groupColumn, body.groupValue);
     else if (action === 'renameGroup') result = renameGroup_(body.sheet, body.groupColumn, body.oldValue, body.newValue);
+    else if (action === 'upload') result = uploadFile_(body.filename, body.mimeType, body.base64);
     else result = { error: 'Unknown action: ' + action };
     return jsonOut_(result);
   } catch (err) {
@@ -256,4 +257,18 @@ function renameGroup_(sheetName, groupColumn, oldValue, newValue) {
   }
   range.setValues(values);
   return { ok: true, updated: updated };
+}
+
+/* --------------------------------- UPLOAD FILE --------------------------------- */
+function uploadFile_(filename, mimeType, base64Data) {
+  try {
+    const folder = DriveApp.getRootFolder(); // Lưu trực tiếp vào thư mục gốc Drive của bạn
+    const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, filename);
+    const file = folder.createFile(blob);
+    // Bật chia sẻ để ai có link cũng xem được (phục vụ việc xem lại minh chứng)
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return { ok: true, url: file.getUrl() };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
 }

@@ -88,7 +88,7 @@ window.HPC_CONFIG = {
         { key: "Start", label: "Bắt đầu", type: "date" },
         { key: "Duration", label: "Số ngày", type: "text", width: "70px" },
         { key: "Due", label: "Hạn hoàn thành", type: "date" },
-        { key: "Evidence", label: "Minh chứng", type: "file" }
+        { key: "Evidence", label: "Minh chứng", type: "file" },
         { key: "Note", label: "Ghi chú PM", type: "text" },
         { key: "Done", label: "Xong", type: "checkbox", width: "56px" },
       ]
@@ -167,7 +167,7 @@ window.HPC_CONFIG = {
         { key: "Contractor", label: "Nhà thầu", type: "select", options: ["HELIX", "Thành An 96", "Sao Nam An", "Cả 3 nhà thầu"] },
         { key: "Location", label: "Vị trí / hạng mục", type: "text" },
         { key: "Content", label: "Nội dung công việc", type: "textarea", primary: true },
-        { key: "Evidence", label: "Minh chứng", type: "file" }
+        { key: "Evidence", label: "Minh chứng", type: "file" },
         { key: "TvgsConfirm", label: "TVGS xác nhận", type: "checkbox", width: "70px" },
         { key: "PmConfirm", label: "PM xác nhận", type: "checkbox", width: "70px" },
         { key: "Note", label: "Ghi chú", type: "text" },
