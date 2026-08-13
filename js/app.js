@@ -76,11 +76,28 @@ window.HPC_APP = (function () {
     const btn = document.createElement("button");
     btn.className = "tab-btn" + (m.id === CURRENT_TAB ? " active" : "");
     btn.innerHTML = `<span class="ic">${m.icon}</span><span>${esc(m.label)}</span><span class="cnt">${countFor(m)}</span>`;
-    btn.onclick = () => { 
+    
+    // TÍCH HỢP LAZY LOADING KHI CLICK TAB
+    btn.onclick = async () => { 
       CURRENT_TAB = m.id; 
-      // Đóng menu trên mobile khi chọn xong
       document.getElementById("sidebar").classList.remove("open");
       render(); 
+      
+      // Nếu tab này chưa có data -> Tạm hiện Spinner và lập tức gọi tải dữ liệu
+      if (m.id !== "dashboard" && !store.isLoaded(m.sheet)) {
+        const root = document.getElementById("viewRoot");
+        root.innerHTML = `<div class="empty-note" style="text-align:center; padding: 60px;">
+          <div class="spin" style="margin: 0 auto 14px; width:28px; height:28px; border-top-color:var(--teal-500)"></div>
+          Đang tải dữ liệu phân hệ ${esc(m.label)}...
+        </div>`;
+        try {
+          await store.loadSheet(m.sheet);
+        } catch(e) {
+          root.innerHTML = `<div class="empty-note" style="color:var(--red-500)">Lỗi tải dữ liệu: ${esc(e.message)}</div>`;
+        }
+        // Tải xong, vẽ lại UI
+        if (CURRENT_TAB === m.id) render(); 
+      }
     };
     return btn;
   }
@@ -119,14 +136,32 @@ window.HPC_APP = (function () {
     renderSyncPill();
   }
 
-  function renderSyncPill() {
+function renderSyncPill() {
     const pill = document.getElementById("syncPill");
     const state = store.syncState;
-    pill.className = "sync-pill " + (state === "syncing" ? "syncing" : state === "synced" ? "synced" : state === "error" ? "error" : "");
-    const label = { idle: "Chưa tải dữ liệu", syncing: "Đang đồng bộ…", synced: "Đã đồng bộ với Google Sheet", error: "Lỗi đồng bộ: " + (store.lastError || "") }[state] || state;
-    pill.innerHTML = `<span class="dot"></span><span>${esc(label)}</span>`;
-  }
+    
+    // Mapping style CSS
+    pill.className = "sync-pill " + (
+      state === "syncing" ? "syncing" : 
+      state === "synced" ? "synced" : 
+      state === "error" ? "error" : 
+      state === "pending" ? "" : ""
+    );
 
+    // Mapping Text hiển thị
+    const label = { 
+      idle: "Chưa tải dữ liệu", 
+      syncing: "Đang đẩy lên Cloud…", 
+      synced: "Đã đồng bộ với Cloud", 
+      error: "Lỗi đồng bộ: " + (store.lastError || ""),
+      pending: "Có thay đổi (Tự lưu sau 5p)" // Báo cho người dùng biết
+    }[state] || state;
+    
+    // Chỉnh màu chấm tròn: Đang chờ lưu thì chấm màu Cam đứng im
+    const dotStyle = state === "pending" ? 'style="background:var(--amber-500); animation:none;"' : '';
+    
+    pill.innerHTML = `<span class="dot" ${dotStyle}></span><span>${window.HPC_ENGINE.esc(label)}</span>`;
+  }
   function refreshSyncBadgeSoon() {
     clearTimeout(syncBadgeTimer);
     syncBadgeTimer = setTimeout(renderSyncPill, 150);
@@ -160,14 +195,32 @@ window.HPC_APP = (function () {
   }
 
   /* ----------------------------------- init ----------------------------------- */
+ /* ----------------------------------- init ----------------------------------- */
   async function init() {
+    // ---- BẢO VỆ DỮ LIỆU CHƯA ĐỒNG BỘ TRƯỚC KHI TẮT TRANG ----
+    window.addEventListener("beforeunload", (e) => {
+      if (store.pendingCount > 0) {
+        e.preventDefault();
+        e.returnValue = "Bạn có dữ liệu chưa đồng bộ lên Cloud. Bạn có chắc chắn muốn thoát?";
+      }
+    });
+
+    // Tự động đẩy dữ liệu lên khi người dùng chuyển sang tab trình duyệt khác hoặc ẩn app
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden" && store.pendingCount > 0) {
+        store.forceFlush();
+      }
+    });
+    // --------------------------------------------------------
+
     document.getElementById("btnForceSync").onclick = async () => {
       await store.forceFlush();
       renderSyncPill();
     };
     document.getElementById("btnRefresh").onclick = async () => {
-      try { await store.loadAll(); buildModuleList(); softRefresh(); }
-      catch (e) { alert("Không tải được dữ liệu: " + e.message); }
+      // Refresh mượt mà, không làm đơ UI
+      store.backgroundLoadAll(MODULES); 
+      softRefresh();
     };
     document.getElementById("btnOpenSheet").onclick = () => {
       window.open(cfg.API_URL.replace("/exec", "/edit"), "_blank");
@@ -176,33 +229,34 @@ window.HPC_APP = (function () {
 
     store.onChange(() => { renderSyncPill(); });
 
-    // Ghi nhận mọi tương tác của người dùng (gõ phím, click, chọn ô...) để
-    // auto-pull hoãn lại, tránh render đè lên dữ liệu đang gõ dở. Xem
-    // store.js -> markActivity() / startAutoPull().
     ["input", "keydown", "click", "change"].forEach(evt => {
       document.addEventListener(evt, () => store.markActivity(), { passive: true });
     });
 
     try {
-      await store.loadAll();
+      // 1. Tải siêu tốc danh sách Sheet để dựng bộ khung (Sidebar & Topbar)
+      await store.fetchMetaAndInit();
       buildModuleList();
+      
+      // 2. Bỏ màn hình Loading đen, lập tức hiển thị Dashboard (Biểu đồ tạm thời = 0)
       document.getElementById("loadingScreen").style.display = "none";
       render();
-      // Chỉ vẽ lại view khi auto-pull thực sự có dữ liệu MỚI TỪ XA — KHÔNG
-      // vẽ lại khi chỉ đơn thuần là push (lưu) dòng mình vừa sửa/thêm xong,
-      // để không làm mất ô đang gõ dở ở dòng/ô khác.
+      
       store.onDataChange(() => softRefresh());
+
+      // 3. Tải ngầm (Background streaming) toàn bộ data 
+      // => Dashboard sẽ thấy biểu đồ và số liệu nhảy lên tự động mà không bị treo trình duyệt!
+      store.backgroundLoadAll(MODULES);
+
     } catch (e) {
       document.getElementById("loadingScreen").innerHTML = `
         <div class="disp" style="font-size:16px">Không kết nối được Google Sheet</div>
         <div style="font-size:12.5px;color:#9DBBD6;max-width:420px;text-align:center;line-height:1.6">
           Lỗi: ${esc(e.message)}<br><br>
-          Kiểm tra lại <b>API_URL</b> trong js/config.js đã trỏ đúng link Apps Script Web App
-          (đuôi <b>/exec</b>) và đã Deploy với quyền truy cập "Anyone" chưa.
+          Kiểm tra lại <b>API_URL</b> trong js/config.js
         </div>
-        <button class="btn primary" onclick="location.reload()">Thử lại</button>`;
-    }
-  }
+        <button class="btn primary" onclick="location.reload()">Thử lại</button>`;}}
+
 
   return { init, render, refreshNavCounts, refreshSyncBadgeSoon, moduleById, get MODULES() { return MODULES; } };
 })();

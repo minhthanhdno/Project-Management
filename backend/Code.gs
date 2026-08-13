@@ -52,6 +52,7 @@ function doPost(e) {
     let result;
     if (action === 'upsert') result = upsertRow_(body.sheet, body.data);
     else if (action === 'delete') result = deleteRow_(body.sheet, body.id);
+    else if (action === 'batch_upsert') result = batchUpsert_(body.payloads);
     else if (action === 'deleteGroup') result = deleteGroup_(body.sheet, body.groupColumn, body.groupValue);
     else if (action === 'renameGroup') result = renameGroup_(body.sheet, body.groupColumn, body.oldValue, body.newValue);
     else if (action === 'upload') result = uploadFile_(body.filename, body.mimeType, body.base64);
@@ -280,4 +281,20 @@ function checkUpdate_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const file = DriveApp.getFileById(ss.getId());
   return { lastUpdated: file.getLastUpdated().getTime() };
+}
+
+/* --------------------------------- BATCH PROCESSING --------------------------------- */
+function batchUpsert_(payloads) {
+  // payloads là mảng các object dạng: [{sheet: "TenTab", data: {ID: "...", ...}}, ...]
+  let results = [];
+  try {
+    payloads.forEach(p => {
+      if (p.sheet && p.data) {
+        results.push(upsertRow_(p.sheet, p.data));
+      }
+    });
+    return { ok: true, processed: results.length, details: results };
+  } catch (err) {
+    return { ok: false, error: String(err), processed: results.length };
+  }
 }

@@ -50,7 +50,8 @@ window.HPC_API = (function () {
     // Thêm mới / cập nhật 1 dòng. data phải có ID nếu là cập nhật; nếu tạo mới
     // để trống ID, server sẽ tự sinh UUID và trả về trong kết quả.
     upsert(sheet, data) { return post({ action: "upsert", sheet, data }); },
-
+    
+batchUpsert(payloads) { return post({ action: "batch_upsert", payloads }); },
     // Xoá 1 dòng theo ID
     remove(sheet, id) { return post({ action: "delete", sheet, id }); },
 

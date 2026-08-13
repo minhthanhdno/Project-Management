@@ -1,44 +1,30 @@
 /* ==========================================================================
-   HELIX PROJECT CONTROL — V2
-   store.js — Bộ nhớ dữ liệu phía client + hàng đợi đồng bộ 2 chiều với Google
-   Sheet. File này KHÔNG cần sửa khi nhân rộng dự án.
-
-   Cơ chế đồng bộ 2 chiều:
-   - PULL: khi tải trang & định kỳ mỗi AUTO_PULL_SECONDS giây, gọi API "all"
-     để lấy dữ liệu mới nhất từ Google Sheet (phản ánh thay đổi từ AppSheet /
-     người khác sửa trực tiếp trên Sheet).
-   - PUSH: mọi chỉnh sửa trên giao diện được ghi ngay vào bộ nhớ local (mượt,
-     không chờ mạng) rồi xếp vào hàng đợi, gộp theo dòng (debounce), gửi lên
-     Google Sheet qua upsert(). Trong lúc chờ, dòng đang sửa sẽ không bị ghi
-     đè bởi PULL định kỳ (xem `pendingIds`).
+   HELIX PROJECT CONTROL — V2 & V3
+   store.js — Bộ nhớ dữ liệu phía client + hàng đợi đồng bộ 2 chiều
    ========================================================================== */
 
 window.HPC_STORE = (function () {
   const cfg = () => window.HPC_CONFIG;
   const api = window.HPC_API;
 
-  let SHEETS = {};          // { sheetName: { columns:[...], rows:[...] } }
-  let pendingIds = new Set(); // ID các dòng đang có thay đổi chưa đồng bộ xong -> PULL sẽ không ghi đè
-  let pushTimers = {};       // debounce timer theo id
-  let listeners = [];        // callback re-render
-  let syncState = "idle";    // idle | syncing | synced | error
+  let SHEETS = {};          
+  let pendingIds = new Set(); 
+  let pendingUpdates = {};   // THÊM MỚI: Giỏ hàng chứa dữ liệu sửa chưa đồng bộ
+  let listeners = [];        
+  let syncState = "idle";    
   let lastError = null;
   let pullTimer = null;
-  let lastActivityAt = Date.now(); // thời điểm người dùng tương tác gần nhất (gõ/click/chọn...)
-  let lastSyncServerTime = 0;
-  // Gọi hàm này mỗi khi người dùng tương tác (app.js gắn listener toàn trang).
-  // Auto-pull sẽ hoãn lại cho tới khi im lặng đủ IDLE_MS liên tục, để không
-  // render đè lên ô đang gõ dở (chưa kịp blur/lưu).
-  function markActivity() { lastActivityAt = Date.now(); }
+  let pushTimer = null;      // THÊM MỚI: Hẹn giờ 5 phút lưu 1 lần
+  let lastActivityAt = Date.now(); 
 
+  let lastSyncServerTime = 0; 
+  let loadedSheets = new Set(); 
+
+  function markActivity() { lastActivityAt = Date.now(); }
   function notify() { listeners.forEach(fn => fn()); }
   function onChange(fn) { listeners.push(fn); }
   function setSyncState(s, err) { syncState = s; lastError = err || null; notify(); }
 
-  // Kênh riêng: CHỈ bắn khi auto-pull thực sự kéo về dữ liệu mới từ xa.
-  // KHÔNG dùng chung với notify()/onChange() ở trên (vốn dùng để cập nhật
-  // đèn trạng thái đồng bộ) để việc PUSH (lưu dòng mình vừa sửa/thêm) không
-  // vô tình kích hoạt render lại toàn bảng và làm mất ô đang gõ dở.
   let dataListeners = [];
   function onDataChange(fn) { dataListeners.push(fn); }
   function notifyDataChange() { dataListeners.forEach(fn => fn()); }
@@ -46,29 +32,59 @@ window.HPC_STORE = (function () {
   function getSheetData(sheetName) {
     return SHEETS[sheetName] || { columns: [], rows: [] };
   }
-
   function getAllSheetNames() { return Object.keys(SHEETS); }
 
- async function loadAll() {
+  async function fetchMetaAndInit() {
     setSyncState("syncing");
-    const res = await api.all();
-    Object.keys(res.data).forEach(name => {
-      const incoming = res.data[name];
-      mergeIncoming(name, incoming);
-    });
+    const res = await api.meta();
+    res.sheets.forEach(s => { if(!SHEETS[s]) SHEETS[s] = { columns:[], rows:[] }; });
     
-    // Lấy mốc thời gian ngay sau khi tải xong toàn bộ dữ liệu
+    // Kích hoạt bộ hẹn giờ lưu tự động lên Cloud mỗi 5 phút
+    if (pushTimer) clearInterval(pushTimer);
+    pushTimer = setInterval(() => {
+      if (pendingIds.size > 0) forceFlush();
+    }, 5 * 60 * 1000); // 5 phút * 60s * 1000ms
+
+    return res;
+  }
+
+  async function loadSheet(sheetName) {
+    if (loadedSheets.has(sheetName)) return;
+    setSyncState("syncing");
+    try {
+      const res = await api.list(sheetName);
+      mergeIncoming(sheetName, res);
+      loadedSheets.add(sheetName);
+      notifyDataChange();
+      setSyncState("synced");
+    } catch (err) {
+      setSyncState("error", err.message);
+      throw err;
+    }
+  }
+
+  async function backgroundLoadAll(moduleList) {
+    for (let m of moduleList) {
+      if (!loadedSheets.has(m.sheet)) {
+        try {
+          const res = await api.list(m.sheet);
+          mergeIncoming(m.sheet, res);
+          loadedSheets.add(m.sheet);
+          notifyDataChange();
+        } catch(e) {
+          console.warn("Lỗi tải nền " + m.sheet, e);
+        }
+      }
+    }
     try {
       const check = await api.checkUpdate();
       if (check && check.lastUpdated) lastSyncServerTime = check.lastUpdated;
-    } catch (e) {}
-
-    setSyncState("synced");
+    } catch(e){}
+    
     startAutoPull();
-    return res;
+    setSyncState("synced");
   }
-  // Trộn dữ liệu mới kéo về với dữ liệu local, KHÔNG ghi đè các dòng đang
-  // chỉnh sửa dở (pendingIds) để tránh giật/mất thao tác người dùng.
+
   function mergeIncoming(sheetName, incoming) {
     const current = SHEETS[sheetName];
     if (!current) {
@@ -81,7 +97,6 @@ window.HPC_STORE = (function () {
       if (r.ID && pendingIds.has(r.ID) && localById[r.ID]) return localById[r.ID];
       return r;
     });
-    // giữ lại các dòng local mới thêm nhưng chưa kịp có trong lần pull này
     current.rows.forEach(r => {
       if (r.ID && pendingIds.has(r.ID) && !incoming.rows.find(x => x.ID === r.ID)) {
         mergedRows.push(r);
@@ -95,37 +110,38 @@ window.HPC_STORE = (function () {
     const secs = cfg().AUTO_PULL_SECONDS;
     if (!secs || secs <= 0) return;
     const idleMs = (cfg().AUTO_PULL_IDLE_SECONDS || 120) * 1000;
-    
-    // Thay đổi tickMs bằng đúng số giây cài đặt (tránh spam server quá nhanh)
     const tickMs = secs * 1000; 
     
     pullTimer = setInterval(async () => {
-      if (Date.now() - lastActivityAt < idleMs) return; // đang bận thao tác -> bỏ qua
+      if (Date.now() - lastActivityAt < idleMs) return; 
       try {
-        // PERFORMANCE GUARD: Chỉ hỏi server mốc thời gian file bị thay đổi (Request siêu nhẹ)
         const check = await api.checkUpdate();
-        
-        // Nếu có người sửa file (thời gian mới > thời gian local đang giữ) -> Mới tải lại data
         if (check && check.lastUpdated && check.lastUpdated > lastSyncServerTime) {
-          const res = await api.all(); 
-          Object.keys(res.data).forEach(name => mergeIncoming(name, res.data[name]));
-          lastSyncServerTime = check.lastUpdated; // Cập nhật lại mốc thời gian
-          notifyDataChange();
+          for (let sheet of loadedSheets) {
+            try {
+              const res = await api.list(sheet);
+              mergeIncoming(sheet, res);
+            } catch(e) {}
+          }
+          lastSyncServerTime = check.lastUpdated;
+          notifyDataChange(); 
         }
-      } catch (e) { 
-        // Im lặng bỏ qua lỗi mạng hoặc 404 lẻ tẻ từ phía server Google, chờ lượt poll sau
-      }
+      } catch (e) {}
     }, tickMs);
   }
 
   function uid() { return "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-  // Cập nhật 1 field của 1 dòng local ngay lập tức + xếp hàng đồng bộ lên server
+ // 1. ÁP DỤNG DIRTY CHECK
   function updateField(sheetName, rowId, field, value) {
     const sheet = SHEETS[sheetName];
     if (!sheet) return;
     const row = sheet.rows.find(r => r.ID === rowId);
     if (!row) return;
+    
+    // DIRTY CHECK: Nếu giá trị gõ vào giống hệt giá trị cũ -> Bỏ qua, không đưa vào giỏ hàng chờ lưu
+    if (String(row[field]) === String(value)) return; 
+    
     row[field] = value;
     queuePush(sheetName, row);
   }
@@ -146,11 +162,10 @@ window.HPC_STORE = (function () {
     if (!sheet) return;
     sheet.rows = sheet.rows.filter(r => r.ID !== rowId);
     pendingIds.delete(rowId);
+    if (pendingUpdates[`${sheetName}_${rowId}`]) delete pendingUpdates[`${sheetName}_${rowId}`];
     notify();
     setSyncState("syncing");
-    api.remove(sheetName, rowId)
-      .then(() => setSyncState("synced"))
-      .catch(err => setSyncState("error", err.message));
+    api.remove(sheetName, rowId).then(() => setSyncState("synced")).catch(err => setSyncState("error", err.message));
   }
 
   function deleteGroup(sheetName, groupColumn, groupValue) {
@@ -159,9 +174,7 @@ window.HPC_STORE = (function () {
     sheet.rows = sheet.rows.filter(r => r[groupColumn] !== groupValue);
     notify();
     setSyncState("syncing");
-    api.removeGroup(sheetName, groupColumn, groupValue)
-      .then(() => setSyncState("synced"))
-      .catch(err => setSyncState("error", err.message));
+    api.removeGroup(sheetName, groupColumn, groupValue).then(() => setSyncState("synced")).catch(err => setSyncState("error", err.message));
   }
 
   function renameGroup(sheetName, groupColumn, oldValue, newValue) {
@@ -170,48 +183,47 @@ window.HPC_STORE = (function () {
     sheet.rows.forEach(r => { if (r[groupColumn] === oldValue) r[groupColumn] = newValue; });
     notify();
     setSyncState("syncing");
-    api.renameGroup(sheetName, groupColumn, oldValue, newValue)
-      .then(() => setSyncState("synced"))
-      .catch(err => setSyncState("error", err.message));
+    api.renameGroup(sheetName, groupColumn, oldValue, newValue).then(() => setSyncState("synced")).catch(err => setSyncState("error", err.message));
   }
 
-  // Gộp nhiều lần sửa liên tiếp trên cùng 1 dòng thành 1 lần gọi API (debounce)
+  // CƠ CHẾ GOM NHÓM (BATCHING) - KHÔNG GỬI API NGAY LẬP TỨC NỮA
   function queuePush(sheetName, row) {
     pendingIds.add(row.ID);
-    setSyncState("syncing");
-    clearTimeout(pushTimers[row.ID]);
-    pushTimers[row.ID] = setTimeout(async () => {
-      try {
-        await api.upsert(sheetName, row);
-        pendingIds.delete(row.ID);
-        if (pendingIds.size === 0) setSyncState("synced");
-      } catch (err) {
-        setSyncState("error", err.message);
-      }
-    }, cfg().PUSH_DEBOUNCE_MS);
+    pendingUpdates[`${sheetName}_${row.ID}`] = { sheet: sheetName, row: row };
+    setSyncState("pending"); // Đổi trạng thái UI thành "Đang chờ"
   }
 
-  async function forceFlush() {
-    // đẩy ngay tất cả các timer đang chờ (dùng khi người dùng bấm "Đồng bộ ngay")
-    Object.keys(pushTimers).forEach(id => clearTimeout(pushTimers[id]));
-    pushTimers = {};
-    const jobs = [];
-    Object.keys(SHEETS).forEach(sheetName => {
-      SHEETS[sheetName].rows.forEach(r => {
-        if (pendingIds.has(r.ID)) jobs.push(api.upsert(sheetName, r).then(() => pendingIds.delete(r.ID)));
-      });
-    });
+  // HÀM NÀY SẼ LẤY TOÀN BỘ GIỎ HÀNG ĐẨY LÊN CLOUD CÙNG 1 LÚC
+ async function forceFlush() {
+    if (pendingIds.size === 0) return;
     setSyncState("syncing");
+    
+    // Gom tất cả các dòng đang chờ thành 1 mảng Payload duy nhất
+    const payloads = Object.values(pendingUpdates).map(job => ({
+      sheet: job.sheet, 
+      data: job.row 
+    }));
+
     try {
-      await Promise.all(jobs);
-      setSyncState("synced");
+      // Gửi ĐÚNG 1 REQUEST lên server
+      const res = await api.batchUpsert(payloads);
+      
+      if (res && res.ok) {
+        // Dọn dẹp giỏ hàng sau khi đẩy thành công
+        pendingIds.clear();
+        pendingUpdates = {};
+        setSyncState("synced");
+      } else {
+        throw new Error(res.error || "Lỗi xử lý lô trên server");
+      }
     } catch (err) {
       setSyncState("error", err.message);
     }
   }
 
   return {
-    loadAll, onChange, onDataChange, getSheetData, getAllSheetNames,
+    fetchMetaAndInit, loadSheet, backgroundLoadAll, isLoaded: (s) => loadedSheets.has(s),
+    onChange, onDataChange, getSheetData, getAllSheetNames,
     updateField, addRow, deleteRow, deleteGroup, renameGroup, forceFlush, markActivity,
     get syncState() { return syncState; },
     get lastError() { return lastError; },
