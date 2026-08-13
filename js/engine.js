@@ -135,6 +135,7 @@ window.HPC_ENGINE = (function () {
 
   /* ================================ TABLE VIEW ================================ */
   /* ================================ TABLE & KANBAN VIEW ================================ */
+ /* ================================ TABLE, KANBAN & GANTT VIEW ================================ */
   function renderTable(root, moduleCfg, roleFilter) {
     const sheetData = store.getSheetData(moduleCfg.sheet);
     const columns = resolveColumns(moduleCfg, sheetData.columns);
@@ -146,9 +147,14 @@ window.HPC_ENGINE = (function () {
     let search = "";
     let contractorChip = null;
     let statusChip = "ALL";
-    let isKanban = false; // Trạng thái xem (Mặc định là Bảng)
+    let viewMode = "table"; // "table" | "kanban" | "gantt"
 
     const canKanban = !!moduleCfg.filterColumn && !!moduleCfg.filterOptions;
+    
+    // Tự động nhận diện module có khả năng vẽ Gantt (Có cột Ngày Bắt đầu & Hạn hoàn thành)
+    const startCol = columns.find(c => c.label.match(/bắt đầu|start/i))?.key || "Start";
+    const dueCol = moduleCfg.dueColumn || columns.find(c => c.label.match(/hạn|due|end/i))?.key || "Due";
+    const canGantt = !!(columns.find(c => c.key === startCol) && columns.find(c => c.key === dueCol));
 
     const roleChipsHtml = moduleCfg.ownerColumn
       ? window.HPC_CONFIG.ROLE_OPTIONS.map(c => `<span class="filter-chip" data-c="${esc(c)}">${esc(c)}</span>`).join("")
@@ -162,23 +168,25 @@ window.HPC_ENGINE = (function () {
     toolbar.innerHTML = `
       <input class="search-box" placeholder="🔍 Tìm theo nội dung...">
       ${roleChipsHtml}${statusChipsHtml}
-      ${canKanban ? `<button class="btn sm" id="btnToggleKanban" style="margin-left: 8px; background: var(--navy-900); color: #fff;">▥ Kanban</button>` : ""}
+      ${canKanban ? `<button class="btn sm toggle-view-btn" data-v="kanban">▥ Kanban</button>` : ""}
+      ${canGantt ? `<button class="btn sm toggle-view-btn" data-v="gantt">📊 Tiến độ</button>` : ""}
       <span class="spacer" style="flex:1"></span>
       ${moduleCfg.groupByColumn ? `<button class="btn sm" data-act="add-group">+ Thêm nhóm</button>` : `<button class="btn sm" data-act="add-row">+ Thêm dòng</button>`}
     `;
     wrap.appendChild(toolbar);
     const host = document.createElement("div");
+    host.style.marginTop = "8px";
     wrap.appendChild(host);
     root.appendChild(wrap);
 
-    const btnToggleKanban = toolbar.querySelector("#btnToggleKanban");
-    if (btnToggleKanban) {
-      btnToggleKanban.onclick = () => {
-        isKanban = !isKanban;
-        btnToggleKanban.innerHTML = isKanban ? "▤ Dạng bảng" : "▥ Kanban";
+    // Chuyển đổi chế độ xem (View Mode)
+    toolbar.querySelectorAll(".toggle-view-btn").forEach(btn => {
+      btn.onclick = () => {
+        const mode = btn.dataset.v;
+        viewMode = (viewMode === mode) ? "table" : mode; // Bấm lại sẽ về dạng bảng
         draw();
       };
-    }
+    });
 
     function filteredRows() {
       let rows = sheetData.rows.slice();
@@ -186,7 +194,7 @@ window.HPC_ENGINE = (function () {
         rows = rows.filter(r => contractorMatches(r[moduleCfg.ownerColumn], roleFilter));
       }
       if (contractorChip) rows = rows.filter(r => contractorMatches(r[moduleCfg.ownerColumn], contractorChip));
-      if (!isKanban && moduleCfg.filterColumn && statusChip !== "ALL") rows = rows.filter(r => r[moduleCfg.filterColumn] === statusChip);
+      if (viewMode === "table" && moduleCfg.filterColumn && statusChip !== "ALL") rows = rows.filter(r => r[moduleCfg.filterColumn] === statusChip);
       if (search) {
         const s = search.toLowerCase();
         rows = rows.filter(r => JSON.stringify(r).toLowerCase().includes(s));
@@ -203,13 +211,24 @@ window.HPC_ENGINE = (function () {
       const rows = filteredRows();
       host.innerHTML = "";
       
-      // BỔ SUNG: Render Kanban thay vì Bảng nếu đang bật
-      if (isKanban && canKanban) {
+      // Update UI Nút View Mode
+      toolbar.querySelectorAll(".toggle-view-btn").forEach(btn => {
+        const isActive = (viewMode === btn.dataset.v);
+        btn.style.background = isActive ? "var(--navy-900)" : "";
+        btn.style.color = isActive ? "#fff" : "";
+      });
+      
+      // BỔ SUNG: Render Kanban hoặc Gantt nếu đang bật
+      if (viewMode === "kanban" && canKanban) {
         host.appendChild(buildKanbanBoard(moduleCfg, columns, rows));
         return;
       }
+      if (viewMode === "gantt" && canGantt) {
+        host.appendChild(buildGanttBoard(moduleCfg, columns, rows, startCol, dueCol));
+        return;
+      }
 
-      // Giữ nguyên logic render Bảng cũ
+      // Giữ nguyên logic render Bảng (Table)
       if (moduleCfg.groupByColumn) {
         const groups = uniqueValues(sheetData.rows, moduleCfg.groupByColumn);
         uniqueValues(rows, moduleCfg.groupByColumn).forEach(g => { if (!groups.includes(g)) groups.push(g); });
@@ -226,11 +245,7 @@ window.HPC_ENGINE = (function () {
 
     toolbar.querySelector(".search-box").oninput = e => { search = e.target.value; draw(); };
     toolbar.querySelectorAll("[data-c]").forEach(chip => {
-      chip.onclick = () => {
-        contractorChip = contractorChip === chip.dataset.c ? null : chip.dataset.c;
-        toolbar.querySelectorAll("[data-c]").forEach(x => x.classList.toggle("active", x.dataset.c === contractorChip));
-        draw();
-      };
+      chip.onclick = () => { contractorChip = contractorChip === chip.dataset.c ? null : chip.dataset.c; draw(); };
     });
     toolbar.querySelectorAll("[data-s]").forEach(chip => {
       chip.onclick = () => {
@@ -254,69 +269,114 @@ window.HPC_ENGINE = (function () {
   }
 
   ////////////////////////////
-  function buildKanbanBoard(moduleCfg, columns, rows) {
-    const board = document.createElement("div");
-    board.className = "kanban-board";
-    const statuses = moduleCfg.filterOptions;
-    let dragCardId = null;
-
-    statuses.forEach(status => {
-      const col = document.createElement("div");
-      col.className = "kanban-col";
-      
-      const colRows = rows.filter(r => r[moduleCfg.filterColumn] === status);
-      
-      col.innerHTML = `
-        <div class="kanban-head">
-          <span class="badge ${calStatusBadgeClass(moduleCfg, status)}">${esc(status)}</span>
-          <span class="mono" style="color:var(--ink-faint); font-size:11px">${colRows.length} thẻ</span>
-        </div>
-        <div class="kanban-body"></div>
-      `;
-      
-      const body = col.querySelector(".kanban-body");
-      colRows.forEach(row => {
-        const card = document.createElement("div");
-        card.className = "kanban-card";
-        card.draggable = true;
-        card.dataset.id = row.ID;
-        
-        const titleKey = moduleCfg.primaryColumn || (columns[1] ? columns[1].key : columns[0].key);
-        const metaKey = moduleCfg.ownerColumn || "";
-        const dateKey = moduleCfg.dueColumn || "";
-        
-        card.innerHTML = `
-          <div class="kanban-card-title">${esc(row[titleKey] || "(Chưa có tiêu đề)")}</div>
-          <div class="kanban-card-meta">
-            <span style="font-weight: 500">${metaKey ? esc(row[metaKey] || "") : ""}</span>
-            <span style="${row[dateKey] && row[dateKey] < todayStr() ? 'color:var(--red-500); font-weight:600' : ''}">${dateKey ? fmtDate(row[dateKey]) : ""}</span>
-          </div>
-        `;
-        
-        // Sự kiện kéo thả
-        card.addEventListener("dragstart", e => { dragCardId = row.ID; e.dataTransfer.effectAllowed = "move"; setTimeout(() => card.style.opacity = "0.5", 0); });
-        card.addEventListener("dragend", () => { dragCardId = null; card.style.opacity = "1"; });
-        
-        body.appendChild(card);
-      });
-      
-      // Xử lý cột nhận thẻ thả vào
-      col.addEventListener("dragover", e => { e.preventDefault(); col.classList.add("drag-over"); });
-      col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
-      col.addEventListener("drop", e => {
-        e.preventDefault();
-        col.classList.remove("drag-over");
-        if (dragCardId) {
-          store.updateField(moduleCfg.sheet, dragCardId, moduleCfg.filterColumn, status);
-          window.HPC_APP.refreshSyncBadgeSoon();
-          window.HPC_APP.render();
-        }
-      });
-      
-      board.appendChild(col);
-    });
+ /* ================================ GANTT CHART ================================ */
+  function buildGanttBoard(moduleCfg, columns, rows, startCol, dueCol) {
+    let minMs = Infinity, maxMs = -Infinity;
     
-    return board;
+    // 1. Tìm mốc thời gian bắt đầu và kết thúc của toàn dự án
+    rows.forEach(r => {
+      if (r[startCol]) { const t = new Date(r[startCol]).getTime(); if(t < minMs) minMs = t; }
+      if (r[dueCol]) { const t = new Date(r[dueCol]).getTime(); if(t > maxMs) maxMs = t; }
+    });
+
+    if (minMs === Infinity || maxMs === -Infinity) {
+       minMs = new Date().getTime(); // Mặc định hôm nay
+       maxMs = minMs + 30 * 24 * 3600 * 1000; // + 1 tháng
+    }
+
+    // Làm tròn minMs về Thứ Hai gần nhất
+    let minDate = new Date(minMs);
+    minDate.setDate(minDate.getDate() - ((minDate.getDay() + 6) % 7));
+    minMs = minDate.getTime();
+
+    // Làm tròn maxMs về Chủ Nhật gần nhất (chừa thêm 1 tuần để chart thoáng)
+    let maxDate = new Date(maxMs);
+    maxDate.setDate(maxDate.getDate() + (6 - ((maxDate.getDay() + 6) % 7)) + 7);
+    maxMs = maxDate.getTime();
+
+    const totalDays = Math.round((maxMs - minMs) / (24*3600*1000)) + 1;
+    const numWeeks = Math.ceil(totalDays / 7);
+
+    // 2. Tạo headers cho các Tuần
+    const weeks = [];
+    let cur = new Date(minMs);
+    for (let i = 0; i < numWeeks; i++) {
+       let wEnd = new Date(cur); wEnd.setDate(wEnd.getDate() + 6);
+       weeks.push({
+         label: `Tuần ${i+1}`,
+         sub: `${cur.getDate()}/${cur.getMonth()+1} - ${wEnd.getDate()}/${wEnd.getMonth()+1}`
+       });
+       cur.setDate(cur.getDate() + 7);
+    }
+
+    // 3. Render Khung HTML của Gantt
+    let html = `<div class="gantt-wrap"><table class="gantt-table"><thead><tr>
+      <th class="gantt-col-fixed">GIAI ĐOẠN / HẠNG MỤC CÔNG VIỆC</th>`;
+    weeks.forEach(w => {
+       html += `<th style="width: 80px; min-width: 80px;">${w.label}<br><span style="font-size:9px; font-weight:normal">${w.sub}</span></th>`;
+    });
+    html += `</tr></thead><tbody>`;
+
+    // 4. Hàm vẽ thanh ngang cho từng Task
+    function renderGanttRow(r) {
+       let sDate = r[startCol] ? new Date(r[startCol]).getTime() : null;
+       let eDate = r[dueCol] ? new Date(r[dueCol]).getTime() : null;
+       
+       if (sDate && !eDate) eDate = sDate;
+       if (eDate && !sDate) sDate = eDate;
+
+       let barHtml = "";
+       if (sDate && eDate) {
+          if (eDate < sDate) eDate = sDate; 
+          const offsetDays = (sDate - minMs) / (24*3600*1000);
+          const durationDays = (eDate - sDate) / (24*3600*1000) + 1;
+          
+          const leftPct = (offsetDays / totalDays) * 100;
+          const widthPct = (durationDays / totalDays) * 100;
+
+          // Logic tô màu
+          let colorClass = "gbar-progress"; // Đang làm: Vàng cam
+          if (moduleCfg.doneColumn && truthy(r[moduleCfg.doneColumn])) colorClass = "gbar-done"; // Đã xong: Xanh
+          else if (r[dueCol] && r[dueCol] < todayStr()) colorClass = "gbar-overdue"; // Trễ hạn: Đỏ
+          
+          const titleText = `${r.Code ? r.Code + ' - ' : ''}${r[moduleCfg.primaryColumn] || ""}\nBắt đầu: ${fmtDate(r[startCol])}\nHạn: ${fmtDate(r[dueCol])}`;
+          
+          barHtml = `<div class="gantt-bar ${colorClass}" style="left: ${leftPct}%; width: ${widthPct}%;" title="${esc(titleText)}">
+             ${widthPct > 3 ? `<span class="gantt-bar-text">${r[moduleCfg.doneColumn] && truthy(r[moduleCfg.doneColumn]) ? '✓' : ''}</span>` : ''}
+          </div>`;
+       }
+
+       const nameKey = moduleCfg.primaryColumn || (columns[1] ? columns[1].key : columns[0].key);
+       const code = r.Code ? `<b class="mono" style="margin-right:6px; color:var(--teal-500); background:#EAF3FB; padding:2px 6px; border-radius:4px; font-size:10px;">${esc(r.Code)}</b>` : "";
+       
+       return `<tr class="gantt-task-row">
+          <td class="gantt-col-fixed">${code}${esc(r[nameKey])}</td>
+          <td colspan="${numWeeks}" class="gantt-timeline-cell">
+             <div class="gantt-grid-bg">
+                ${weeks.map(() => `<div class="gantt-grid-col"></div>`).join("")}
+             </div>
+             ${barHtml}
+          </td>
+       </tr>`;
+    }
+
+    // 5. Lặp dữ liệu để vẽ (Có nhóm hoặc Không có nhóm)
+    if (moduleCfg.groupByColumn) {
+      const groups = uniqueValues(rows, moduleCfg.groupByColumn);
+      groups.forEach(g => {
+        html += `<tr class="gantt-group-row"><td class="gantt-col-fixed" style="z-index: 11;">${esc(g)}</td>
+          <td colspan="${numWeeks}" style="background: transparent;"></td></tr>`;
+        const items = sortByOrder(rows.filter(r => r[moduleCfg.groupByColumn] === g));
+        items.forEach(r => { html += renderGanttRow(r); });
+      });
+    } else {
+      sortByOrder(rows).forEach(r => { html += renderGanttRow(r); });
+    }
+
+    html += `</tbody></table></div>`;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = html;
+    return wrap.firstChild;
   }
   /////////////////////
 

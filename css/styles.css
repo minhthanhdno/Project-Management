@@ -290,3 +290,24 @@ td.cell-progress-bg .pct-fill { position: absolute; left: 0; top: 0; bottom: 0; 
 .kanban-card-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: var(--navy-900); line-height: 1.4; }
 .kanban-card-meta { font-size: 11px; color: var(--ink-soft); display: flex; justify-content: space-between; align-items: center; }
 .kanban-col.drag-over { background: #EAF3FB; border-color: var(--teal-500); }
+
+/* ============ BỔ SUNG: V3 - Gantt Chart View ============ */
+.gantt-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); max-height: 75vh; }
+.gantt-table { width: 100%; border-collapse: collapse; font-size: 11.5px; min-width: 800px; }
+.gantt-table th { background: #F8FAFD; border: 1px solid var(--line); font-weight: 600; color: var(--ink-soft); text-align: center; padding: 6px 4px; white-space: nowrap; }
+.gantt-table td { border-bottom: 1px solid var(--line-soft); }
+.gantt-col-fixed { position: sticky; left: 0; z-index: 10; background: #fff; border-right: 2px solid var(--line) !important; width: 320px; max-width: 320px; box-shadow: 2px 0 5px rgba(0,0,0,0.03); }
+.gantt-group-row td { background: #F1F6FA; font-weight: 600; color: var(--navy-900); padding: 8px 12px; }
+.gantt-task-row td.gantt-col-fixed { padding: 6px 12px 6px 20px; white-space: normal; line-height: 1.4; color: var(--ink); }
+.gantt-timeline-cell { position: relative; padding: 0 !important; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+.gantt-grid-bg { display: flex; position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.gantt-grid-col { flex: 1; border-right: 1px dashed var(--line-soft); }
+.gantt-grid-col:last-child { border-right: none; }
+.gantt-bar { position: absolute; top: 6px; bottom: 6px; border-radius: 4px; z-index: 2; box-shadow: 0 1px 3px rgba(0,0,0,0.15); cursor: pointer; min-width: 4px; transition: transform 0.15s, opacity 0.15s; display:flex; align-items:center; padding: 0 6px; overflow:hidden; }
+.gantt-bar:hover { transform: translateY(-2px); z-index: 3; opacity: 0.9; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+.gantt-bar-text { color: #fff; font-size: 10.5px; font-weight: 600; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.3); margin-left: auto; }
+
+/* Màu sắc Gantt theo trạng thái (Đồng bộ với hệ thống cảnh báo) */
+.gbar-done { background: var(--green-500); }
+.gbar-overdue { background: var(--red-500); animation: calBlink 2s infinite; }
+.gbar-progress { background: var(--amber-500); }
