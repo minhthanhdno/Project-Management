@@ -44,6 +44,8 @@ window.HPC_API = (function () {
 
     // Lấy toàn bộ dữ liệu của TẤT CẢ sheet trong 1 lần gọi (dùng khi tải trang)
     all() { return get({ action: "all" }); },
+    // THÊM DÒNG NÀY NGAY BÊN DƯỚI:
+    checkUpdate() { return get({ action: "check_update" }); },
 
     // Thêm mới / cập nhật 1 dòng. data phải có ID nếu là cập nhật; nếu tạo mới
     // để trống ID, server sẽ tự sinh UUID và trả về trong kết quả.

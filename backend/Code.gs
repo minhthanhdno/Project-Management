@@ -36,6 +36,7 @@ function doGet(e) {
     else if (action === 'schema') result = getSchema_(e.parameter.sheet);
     else if (action === 'list') result = getList_(e.parameter.sheet);
     else if (action === 'all') result = getAll_();
+    else if (action === 'check_update') result = checkUpdate_();
     else result = { error: 'Unknown action: ' + action };
     return jsonOut_(result);
   } catch (err) {
@@ -271,4 +272,12 @@ function uploadFile_(filename, mimeType, base64Data) {
   } catch (err) {
     return { ok: false, error: String(err) };
   }
+}
+
+/* --------------------------------- PERFORMANCE GUARD --------------------------------- */
+function checkUpdate_() {
+  // Lấy thời điểm file Google Sheet được chỉnh sửa lần cuối (siêu nhẹ, không cần đọc data)
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const file = DriveApp.getFileById(ss.getId());
+  return { lastUpdated: file.getLastUpdated().getTime() };
 }

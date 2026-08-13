@@ -17,8 +17,8 @@ window.HPC_CONFIG = {
   //    Sau khi dán backend/Code.gs vào Apps Script và Deploy, dán link vào đây.
   //    Xem README.md mục 1. Muốn thử nhanh không cần Google Sheet thật: chạy
   //    `python3 dev/mock_server.py` rồi để nguyên giá trị localhost bên dưới.
-  API_URL: "https://script.google.com/macros/s/AKfycbyvDWqNxdgap0R80QkO9Q4w_CUhInA21-lQkEShNtQedtTb6ZEaGX_JyKmS_ZR4S2-b/exec",  // ⚠️ THAY BẰNG LINK APPS SCRIPT WEB APP THẬT CỦA BẠN TRƯỚC KHI DÙNG THẬT
-
+  //API_URL: "https://script.google.com/macros/s/AKfycbyvDWqNxdgap0R80QkO9Q4w_CUhInA21-lQkEShNtQedtTb6ZEaGX_JyKmS_ZR4S2-b/exec",  // ⚠️ THAY BẰNG LINK APPS SCRIPT WEB APP THẬT CỦA BẠN TRƯỚC KHI DÙNG THẬT
+  API_URL: "https://script.google.com/macros/s/AKfycbyq1LwXEF4NGkPc4XM-PF7Pe7IzWSDvB1Cw3uMM0Apx57NiJQ-7zXoLmO7iCGbsJHq3/exec",
   // 1b. ĐĂNG NHẬP ĐƠN GIẢN (không phân quyền theo người dùng):
   //     - SITE_PASSWORD: mật khẩu để mở được giao diện (chặn người lạ có link) — xem js/auth.js
   //     - ACCESS_TOKEN: mã bí mật gửi kèm mọi request lên backend — PHẢI TRÙNG

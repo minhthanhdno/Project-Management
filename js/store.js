@@ -25,7 +25,7 @@ window.HPC_STORE = (function () {
   let lastError = null;
   let pullTimer = null;
   let lastActivityAt = Date.now(); // thời điểm người dùng tương tác gần nhất (gõ/click/chọn...)
-
+  let lastSyncServerTime = 0;
   // Gọi hàm này mỗi khi người dùng tương tác (app.js gắn listener toàn trang).
   // Auto-pull sẽ hoãn lại cho tới khi im lặng đủ IDLE_MS liên tục, để không
   // render đè lên ô đang gõ dở (chưa kịp blur/lưu).
@@ -49,18 +49,24 @@ window.HPC_STORE = (function () {
 
   function getAllSheetNames() { return Object.keys(SHEETS); }
 
-  async function loadAll() {
+ async function loadAll() {
     setSyncState("syncing");
     const res = await api.all();
     Object.keys(res.data).forEach(name => {
       const incoming = res.data[name];
       mergeIncoming(name, incoming);
     });
+    
+    // Lấy mốc thời gian ngay sau khi tải xong toàn bộ dữ liệu
+    try {
+      const check = await api.checkUpdate();
+      if (check && check.lastUpdated) lastSyncServerTime = check.lastUpdated;
+    } catch (e) {}
+
     setSyncState("synced");
     startAutoPull();
     return res;
   }
-
   // Trộn dữ liệu mới kéo về với dữ liệu local, KHÔNG ghi đè các dòng đang
   // chỉnh sửa dở (pendingIds) để tránh giật/mất thao tác người dùng.
   function mergeIncoming(sheetName, incoming) {
@@ -88,15 +94,27 @@ window.HPC_STORE = (function () {
     if (pullTimer) clearInterval(pullTimer);
     const secs = cfg().AUTO_PULL_SECONDS;
     if (!secs || secs <= 0) return;
-    const idleMs = (cfg().AUTO_PULL_IDLE_SECONDS || 120) * 1000; // mặc định 2 phút
-    const tickMs = Math.min(secs, 5) * 1000; // kiểm tra thường xuyên, nhưng chỉ THỰC SỰ pull khi đủ rảnh
+    const idleMs = (cfg().AUTO_PULL_IDLE_SECONDS || 120) * 1000;
+    
+    // Thay đổi tickMs bằng đúng số giây cài đặt (tránh spam server quá nhanh)
+    const tickMs = secs * 1000; 
+    
     pullTimer = setInterval(async () => {
-      if (Date.now() - lastActivityAt < idleMs) return; // còn đang tương tác -> bỏ qua lượt này
+      if (Date.now() - lastActivityAt < idleMs) return; // đang bận thao tác -> bỏ qua
       try {
-        const res = await api.all();
-        Object.keys(res.data).forEach(name => mergeIncoming(name, res.data[name]));
-        notifyDataChange(); // chỉ kênh này mới nên kích hoạt render lại toàn bảng
-      } catch (e) { /* im lặng bỏ qua lỗi polling, giữ dữ liệu hiện có */ }
+        // PERFORMANCE GUARD: Chỉ hỏi server mốc thời gian file bị thay đổi (Request siêu nhẹ)
+        const check = await api.checkUpdate();
+        
+        // Nếu có người sửa file (thời gian mới > thời gian local đang giữ) -> Mới tải lại data
+        if (check && check.lastUpdated && check.lastUpdated > lastSyncServerTime) {
+          const res = await api.all(); 
+          Object.keys(res.data).forEach(name => mergeIncoming(name, res.data[name]));
+          lastSyncServerTime = check.lastUpdated; // Cập nhật lại mốc thời gian
+          notifyDataChange();
+        }
+      } catch (e) { 
+        // Im lặng bỏ qua lỗi mạng hoặc 404 lẻ tẻ từ phía server Google, chờ lượt poll sau
+      }
     }, tickMs);
   }
 
