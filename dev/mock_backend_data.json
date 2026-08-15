@@ -18,7 +18,7 @@
    {
     "ID": "dca836ebf8",
     "Phase": "GIAI ĐOẠN KHẢO SÁT & CHUẨN BỊ (Tuần 1-4)",
-    "Code": "1.1",
+    "Code": "A1.1",
     "Name": "Lập các tổ triển khai, thống nhất quy trình làm việc",
     "Contractor": "CĐT, HELIX",
     "HospitalPIC": null,
@@ -32,7 +32,7 @@
    {
     "ID": "37ca33b0bf",
     "Phase": "GIAI ĐOẠN KHẢO SÁT & CHUẨN BỊ (Tuần 1-4)",
-    "Code": "1.2",
+    "Code": "A1.2",
     "Name": "Khảo sát vị trí lắp đặt, nguồn điện, mạng",
     "Contractor": "Sao Nam An",
     "HospitalPIC": null,
@@ -46,7 +46,7 @@
    {
     "ID": "49a7c64928",
     "Phase": "GIAI ĐOẠN KHẢO SÁT & CHUẨN BỊ (Tuần 1-4)",
-    "Code": "1.3",
+    "Code": "A1.3",
     "Name": "Khảo sát hạ tầng mạng, Server, Firewall, Core/Access Switch",
     "Contractor": "Thành An 96",
     "HospitalPIC": null,
@@ -60,7 +60,7 @@
    {
     "ID": "2a567e1e29",
     "Phase": "GIAI ĐOẠN KHẢO SÁT & CHUẨN BỊ (Tuần 1-4)",
-    "Code": "1.4",
+    "Code": "A1.4",
     "Name": "Khảo sát quy trình nghiệp vụ BV, thu thập danh mục (Bảng giá, Khoa phòng...)",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -74,7 +74,7 @@
    {
     "ID": "d3e0fe60f3",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.1",
+    "Code": "B1.1",
     "Name": "Tập kết hàng hóa 65 thiết bị ngoại vi tại kho, kiểm tra Serial",
     "Contractor": "Sao Nam An",
     "HospitalPIC": null,
@@ -88,10 +88,10 @@
    {
     "ID": "4cc446f0ff",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.2",
+    "Code": "B1.2",
     "Name": "Lắp đặt Máy in, Máy Scan, Máy chiếu, Photocopy, Máy in mã vạch",
     "Contractor": "Sao Nam An",
-    "HospitalPIC": null,
+    "HospitalPIC": "",
     "Start": null,
     "Duration": null,
     "Due": null,
@@ -102,7 +102,7 @@
    {
     "ID": "7c2deb8fa6",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.3",
+    "Code": "B1.3",
     "Name": "Cấu hình 2 bộ Firewall (NGFW, Antivirus, SD-WAN)",
     "Contractor": "Thành An 96",
     "HospitalPIC": null,
@@ -116,7 +116,7 @@
    {
     "ID": "aad31e105d",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.4",
+    "Code": "B1.4",
     "Name": "Triển khai Endpoint Security (200 users) tích hợp SIEM/SOAR",
     "Contractor": "Thành An 96",
     "HospitalPIC": null,
@@ -130,7 +130,7 @@
    {
     "ID": "05d0df0a5d",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.5",
+    "Code": "B1.5",
     "Name": "Cấu hình Core Switch & Switch nhánh (VLAN, QoS, Routing)",
     "Contractor": "Thành An 96",
     "HospitalPIC": null,
@@ -144,7 +144,7 @@
    {
     "ID": "853dd00a29",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.6",
+    "Code": "B1.6",
     "Name": "Cấu hình mạng Không dây (Access Point, WLC) & Máy chủ",
     "Contractor": "Thành An 96",
     "HospitalPIC": null,
@@ -158,7 +158,7 @@
    {
     "ID": "133accd653",
     "Phase": "CUNG CẤP & LẮP ĐẶT THIẾT BỊ PHẦN CỨNG",
-    "Code": "2.7",
+    "Code": "B1.7",
     "Name": "Cấu hình Data Center, SAN Storage & Backup System",
     "Contractor": "Thành An 96",
     "HospitalPIC": null,
@@ -172,7 +172,7 @@
    {
     "ID": "5c28b41a8b",
     "Phase": "CÀI ĐẶT & CẤU HÌNH PHẦN MỀM",
-    "Code": "3.1",
+    "Code": "C1.1",
     "Name": "Cài đặt phần mềm trên máy chủ và các máy trạm",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -186,7 +186,7 @@
    {
     "ID": "a7cda6b89b",
     "Phase": "CÀI ĐẶT & CẤU HÌNH PHẦN MỀM",
-    "Code": "3.2",
+    "Code": "C1.2",
     "Name": "Import danh mục, phân quyền người dùng, cấu hình form mẫu",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -200,7 +200,7 @@
    {
     "ID": "2b5a1b57e2",
     "Phase": "CÀI ĐẶT & CẤU HÌNH PHẦN MỀM",
-    "Code": "3.3",
+    "Code": "C1.3",
     "Name": "Tích hợp, kết nối máy xét nghiệm (LIS) và máy chẩn đoán hình ảnh (PACS)",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -214,7 +214,7 @@
    {
     "ID": "e25a8f2098",
     "Phase": "ĐÀO TẠO, HƯỚNG DẪN SỬ DỤNG",
-    "Code": "4.1",
+    "Code": "D1.1",
     "Name": "Bố trí phòng đào tạo (Máy chiếu, 3 máy trạm LAN)",
     "Contractor": "CĐT, HELIX",
     "HospitalPIC": null,
@@ -228,7 +228,7 @@
    {
     "ID": "6faf19ff47",
     "Phase": "ĐÀO TẠO, HƯỚNG DẪN SỬ DỤNG",
-    "Code": "4.2",
+    "Code": "D1.2",
     "Name": "Đào tạo tập trung & Đào tạo thực hành tại chỗ (Cầm tay chỉ việc)",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -242,7 +242,7 @@
    {
     "ID": "dd375bc445",
     "Phase": "ĐÀO TẠO, HƯỚNG DẪN SỬ DỤNG",
-    "Code": "4.3",
+    "Code": "D1.3",
     "Name": "Tiếp nhận góp ý, hiệu chỉnh phần mềm sau đào tạo",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -256,7 +256,7 @@
    {
     "ID": "0e4e69dcea",
     "Phase": "VẬN HÀNH THỬ, KIỂM THỬ & NGHIỆM THU",
-    "Code": "5.1",
+    "Code": "E1.1",
     "Name": "Kiểm thử chức năng, hiệu năng và an toàn bảo mật phần mềm",
     "Contractor": "HELIX",
     "HospitalPIC": null,
@@ -270,7 +270,7 @@
    {
     "ID": "f1331a3e0e",
     "Phase": "VẬN HÀNH THỬ, KIỂM THỬ & NGHIỆM THU",
-    "Code": "5.2",
+    "Code": "E1.2",
     "Name": "Test run (Kiểm tra vận hành toàn hệ thống phần cứng + phần mềm)",
     "Contractor": "Cả 3 nhà thầu",
     "HospitalPIC": null,
@@ -284,7 +284,7 @@
    {
     "ID": "6b30c050eb",
     "Phase": "VẬN HÀNH THỬ, KIỂM THỬ & NGHIỆM THU",
-    "Code": "5.3",
+    "Code": "E1.3",
     "Name": "Nghiệm thu tổng thể & Bàn giao đưa vào sử dụng",
     "Contractor": "Cả 3 nhà thầu",
     "HospitalPIC": null,
@@ -294,6 +294,34 @@
     "Evidence": "Biên bản nghiệm thu đưa vào SD",
     "Note": "Mốc thanh toán quan trọng",
     "Done": "FALSE"
+   },
+   {
+    "ID": "idmsrnlar53jvvu9",
+    "Phase": "GIAI ĐOẠN KHẢO SÁT & CHUẨN BỊ (Tuần 1-4)",
+    "Code": "A1.5",
+    "Name": "demo 123",
+    "Contractor": "HELIX",
+    "HospitalPIC": "",
+    "Start": "2026-08-05",
+    "Duration": "",
+    "Due": "2026-08-19",
+    "Evidence": "",
+    "Note": "",
+    "Done": ""
+   },
+   {
+    "ID": "idmsrnpzm2jp8m06",
+    "Phase": "GIAI ĐOẠN KHẢO SÁT & CHUẨN BỊ (Tuần 1-4)",
+    "Code": "A1.6",
+    "Name": "check pocfef",
+    "Contractor": "Thành An 96",
+    "HospitalPIC": "",
+    "Start": "",
+    "Duration": "",
+    "Due": "",
+    "Evidence": "",
+    "Note": "",
+    "Done": ""
    }
   ]
  },

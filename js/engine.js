@@ -78,16 +78,41 @@ window.HPC_ENGINE = (function () {
     return s;
   }
 
+  // Đã nâng cấp: Đánh mã WBS đa phân cấp tự động
   function recomputeCodes(moduleCfg) {
     if (!moduleCfg.groupByColumn || !moduleCfg.columns || moduleCfg.columns[0].label !== "#") return;
     const codeKey = moduleCfg.columns[0].key;
     const sheetData = store.getSheetData(moduleCfg.sheet);
     const groups = uniqueValues(sheetData.rows, moduleCfg.groupByColumn);
+    
     groups.forEach((g, gi) => {
-      const groupCode = letterFor(gi) + "1";
+      const groupCode = letterFor(gi) + "1"; // VD: A1
       const items = sortByOrder(sheetData.rows.filter(r => r[moduleCfg.groupByColumn] === g));
+      
+      let levelCounts = []; // Mảng chứa bộ đếm của từng cấp độ
+
       items.forEach((r, ii) => {
-        const newCode = groupCode + "." + (ii + 1);
+        let indent = toNum(r.Indent, 0);
+        if (indent < 0) indent = 0;
+        if (indent > 4) indent = 4; // Giới hạn sâu tối đa 5 cấp (0->4)
+
+        // Đảm bảo mảng đủ độ dài
+        while (levelCounts.length <= indent) levelCounts.push(0);
+
+        // Tăng biến đếm của cấp hiện tại
+        levelCounts[indent]++;
+
+        // Reset tất cả các biến đếm của cấp sâu hơn
+        for (let i = indent + 1; i < levelCounts.length; i++) {
+          levelCounts[i] = 0;
+        }
+
+        // Xây dựng chuỗi mã (Ví dụ: A1.1.2)
+        let newCode = groupCode;
+        for (let i = 0; i <= indent; i++) {
+          newCode += "." + levelCounts[i];
+        }
+
         if (r[codeKey] !== newCode) store.updateField(moduleCfg.sheet, r.ID, codeKey, newCode);
       });
     });
@@ -334,10 +359,9 @@ window.HPC_ENGINE = (function () {
           const leftPct = (offsetDays / totalDays) * 100;
           const widthPct = (durationDays / totalDays) * 100;
 
-          // Logic tô màu
-          let colorClass = "gbar-progress"; // Đang làm: Vàng cam
-          if (moduleCfg.doneColumn && truthy(r[moduleCfg.doneColumn])) colorClass = "gbar-done"; // Đã xong: Xanh
-          else if (r[dueCol] && r[dueCol] < todayStr()) colorClass = "gbar-overdue"; // Trễ hạn: Đỏ
+          let colorClass = "gbar-progress";
+          if (moduleCfg.doneColumn && truthy(r[moduleCfg.doneColumn])) colorClass = "gbar-done"; 
+          else if (r[dueCol] && r[dueCol] < todayStr()) colorClass = "gbar-overdue"; 
           
           const titleText = `${r.Code ? r.Code + ' - ' : ''}${r[moduleCfg.primaryColumn] || ""}\nBắt đầu: ${fmtDate(r[startCol])}\nHạn: ${fmtDate(r[dueCol])}`;
           
@@ -349,8 +373,14 @@ window.HPC_ENGINE = (function () {
        const nameKey = moduleCfg.primaryColumn || (columns[1] ? columns[1].key : columns[0].key);
        const code = r.Code ? `<b class="mono" style="margin-right:6px; color:var(--teal-500); background:#EAF3FB; padding:2px 6px; border-radius:4px; font-size:10px;">${esc(r.Code)}</b>` : "";
        
+       // NÂNG CẤP: Lùi lề và in đậm cột Giai đoạn bên Gantt Chart
+       const indent = toNum(r.Indent, 0);
+       const padLeft = indent * 20 + 12;
+       const fw = indent === 0 ? "700" : "normal";
+       const color = indent === 0 ? "var(--navy-900)" : "var(--ink)";
+
        return `<tr class="gantt-task-row">
-          <td class="gantt-col-fixed">${code}${esc(r[nameKey])}</td>
+          <td class="gantt-col-fixed" style="padding-left: ${padLeft}px; font-weight: ${fw}; color: ${color};">${code}${esc(r[nameKey])}</td>
           <td colspan="${numWeeks}" class="gantt-timeline-cell">
              <div class="gantt-grid-bg">
                 ${weeks.map(() => `<div class="gantt-grid-col"></div>`).join("")}
@@ -422,12 +452,15 @@ window.HPC_ENGINE = (function () {
 
   function truthy(v) { return v === true || v === "true" || v === "TRUE" || v === 1 || v === "1"; }
 
-  function buildFlatTable(moduleCfg, columns, rows, groupValue) {
+ function buildFlatTable(moduleCfg, columns, rows, groupValue) {
     const tblWrap = document.createElement("div");
     tblWrap.className = "tbl-wrap";
     const table = document.createElement("table");
     table.className = "dt";
-    table.innerHTML = `<thead><tr><th style="width:28px"></th>${columns.map(c => `<th style="${c.width ? "width:" + c.width : ""}">${esc(c.label)}</th>`).join("")}<th style="width:30px"></th></tr></thead>`;
+    
+    // Đã nâng cấp: Mở rộng cột cuối cùng thành 90px để chứa đủ 3 nút thao tác
+    table.innerHTML = `<thead><tr><th style="width:28px"></th>${columns.map(c => `<th style="${c.width ? "width:" + c.width : ""}">${esc(c.label)}</th>`).join("")}<th style="width:90px; text-align:center;">Thao tác</th></tr></thead>`;
+    
     const tbody = document.createElement("tbody");
     rows.forEach(row => tbody.appendChild(buildRow(moduleCfg, columns, row)));
     table.appendChild(tbody);
@@ -455,7 +488,7 @@ window.HPC_ENGINE = (function () {
     return wrapper;
   }
 
- function buildRow(moduleCfg, columns, row) {
+function buildRow(moduleCfg, columns, row) {
     const tr = document.createElement("tr");
     tr.dataset.id = row.ID;
     const handleTd = document.createElement("td");
@@ -463,13 +496,28 @@ window.HPC_ENGINE = (function () {
     handleTd.title = "Kéo để đổi thứ tự";
     handleTd.textContent = "☰";
     tr.appendChild(handleTd);
+
+    const indentLevel = toNum(row.Indent, 0); // Lấy cấp độ của dòng
+
     columns.forEach(col => {
       const td = document.createElement("td");
-      // Bổ sung thuộc tính data-label để phục vụ giao diện Mobile Card View
       td.setAttribute("data-label", col.label);
-      
-      if (col.primary) td.className = "cell-primary";
-      if (col.key === (columns[0] && columns[0].key)) td.classList.add("cell-code");
+
+      if (col.primary) {
+        td.className = "cell-primary";
+        // NÂNG CẤP: Thụt lề và in đậm dựa theo Cấp độ (Indent)
+        if (indentLevel === 0) {
+           td.style.fontWeight = "700";
+           td.style.color = "var(--navy-900)";
+        } else {
+           td.style.paddingLeft = (indentLevel * 24 + 10) + "px";
+        }
+      }
+
+      if (col.key === (columns[0] && columns[0].key)) {
+        td.classList.add("cell-code");
+      }
+
       const val = row[col.key];
       renderCell(td, col, val, v => {
         store.updateField(moduleCfg.sheet, row.ID, col.key, v);
@@ -477,7 +525,22 @@ window.HPC_ENGINE = (function () {
       });
       tr.appendChild(td);
     });
-    const delTd = document.createElement("td");
+
+    // NÂNG CẤP: Thêm nút Tăng/Giảm cấp độ
+    const actionTd = document.createElement("td");
+    actionTd.style.whiteSpace = "nowrap";
+    actionTd.style.textAlign = "center";
+
+    const outBtn = document.createElement("span");
+    outBtn.className = "row-del"; outBtn.innerHTML = "⭠"; outBtn.title = "Giảm cấp (Đẩy ra ngoài)";
+    outBtn.style.marginRight = "4px";
+    outBtn.onclick = () => { if (indentLevel > 0) { store.updateField(moduleCfg.sheet, row.ID, "Indent", indentLevel - 1); window.HPC_APP.render(); }};
+
+    const inBtn = document.createElement("span");
+    inBtn.className = "row-del"; inBtn.innerHTML = "⭢"; inBtn.title = "Tăng cấp (Thụt vào trong)";
+    inBtn.style.marginRight = "8px";
+    inBtn.onclick = () => { if (indentLevel < 4) { store.updateField(moduleCfg.sheet, row.ID, "Indent", indentLevel + 1); window.HPC_APP.render(); }};
+
     const delBtn = document.createElement("span");
     delBtn.className = "row-del"; delBtn.textContent = "✕"; delBtn.title = "Xoá dòng";
     delBtn.onclick = () => {
@@ -486,18 +549,20 @@ window.HPC_ENGINE = (function () {
       window.HPC_APP.render();
       window.HPC_APP.refreshNavCounts();
     };
-    delTd.appendChild(delBtn);
-    tr.appendChild(delTd);
 
-    // --- BỔ SUNG: Trực quan hóa màu sắc cho cả dòng (Row Highlighting) ---
+    actionTd.appendChild(outBtn);
+    actionTd.appendChild(inBtn);
+    actionTd.appendChild(delBtn);
+    tr.appendChild(actionTd);
+
+    // --- Giữ nguyên logic màu sắc dòng đã hoàn thành ---
     if (moduleCfg.doneColumn && truthy(row[moduleCfg.doneColumn])) {
       tr.style.opacity = "0.55";
-      tr.style.background = "var(--bg)"; // Làm mờ và đổi nền dòng đã xong
+      tr.style.background = "var(--bg)"; 
     }
     if (moduleCfg.alertColumn && row[moduleCfg.alertColumn] === moduleCfg.alertValue && row[moduleCfg.statusColumnForAlert] !== moduleCfg.alertExcludeStatus) {
-      tr.style.boxShadow = "inset 4px 0 0 var(--red-500)"; // Viền đỏ cảnh báo mức HIGH
+      tr.style.boxShadow = "inset 4px 0 0 var(--red-500)"; 
     }
-    // ----------------------------------------------------------------------
 
     return tr;
   }
