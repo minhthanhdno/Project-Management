@@ -298,3 +298,24 @@ function batchUpsert_(payloads) {
     return { ok: false, error: String(err), processed: results.length };
   }
 }
+
+function autoGenerateId(e) {
+  if (!e || !e.range) return;
+  const sheet = e.range.getSheet();
+  const row = e.range.getRow();
+  
+  // Bỏ qua nếu sửa dòng tiêu đề
+  if (row < 2) return; 
+  
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idColIndex = headers.indexOf("ID") + 1; // Tìm vị trí cột ID
+  
+  if (idColIndex > 0) {
+    const idCell = sheet.getRange(row, idColIndex);
+    // Nếu người dùng nhập dữ liệu mà ô ID đang trống -> Tự động sinh ID
+    if (!idCell.getValue() && e.value) {
+      const newId = Utilities.getUuid().substring(0, 10);
+      idCell.setValue(newId);
+    }
+  }
+} 

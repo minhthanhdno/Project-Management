@@ -364,3 +364,39 @@ td.cell-progress-bg .pct-fill { position: absolute; left: 0; top: 0; bottom: 0; 
 }
 .sp-textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
 .sp-input:focus, .sp-textarea:focus { outline: 2px solid var(--teal-500); outline-offset: -1px; }
+
+/* ============ BỔ SUNG V3 - TỐI ƯU UX MOBILE ============ */
+@media (max-width: 768px) {
+  /* 1. Ngăn chặn iOS tự động Zoom bằng cách ép font 16px */
+  .dt td input, 
+  .dt td select, 
+  .sp-input, 
+  .sp-textarea, 
+  .search-box {
+    font-size: 16px !important;
+  }
+
+  /* 2. Tăng vùng chạm ngón tay (Touch Targets) cho dễ bấm */
+  .row-del {
+    padding: 8px 12px;
+    font-size: 16px;
+  }
+  .btn.sm {
+    padding: 8px 16px;
+    font-size: 14px;
+    min-height: 38px;
+  }
+
+  /* 3. Cho Slide-out Panel tràn viền 100% màn hình đt */
+  .slide-panel {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  /* 4. Giấu bớt các cột không quan trọng trên điện thoại để bảng đỡ bị cuộn ngang quá dài */
+  .dt td:nth-child(n+5):not(:last-child), 
+  .dt th:nth-child(n+5):not(:last-child) {
+    display: none;
+  }
+}
+

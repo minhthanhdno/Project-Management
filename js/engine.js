@@ -603,8 +603,19 @@ function buildRow(moduleCfg, columns, row) {
       window.HPC_APP.refreshNavCounts();
     };
 
+    // Tạo nút mở chi tiết (Dành cho Mobile chạm 1 phát là ăn ngay)
+    const editBtn = document.createElement("span");
+    editBtn.className = "row-del"; // Dùng chung class để lấy style
+    editBtn.innerHTML = "📝"; 
+    editBtn.title = "Chi tiết";
+    editBtn.style.marginRight = "8px";
+    editBtn.onclick = () => openSlidePanel(moduleCfg, columns, row);
+
+  
+
     actionTd.appendChild(outBtn);
     actionTd.appendChild(inBtn);
+    actionTd.appendChild(editBtn);
     actionTd.appendChild(delBtn);
     tr.appendChild(actionTd);
 
