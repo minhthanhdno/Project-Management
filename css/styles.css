@@ -311,3 +311,56 @@ td.cell-progress-bg .pct-fill { position: absolute; left: 0; top: 0; bottom: 0; 
 .gbar-done { background: var(--green-500); }
 .gbar-overdue { background: var(--red-500); animation: calBlink 2s infinite; }
 .gbar-progress { background: var(--amber-500); }
+
+/* ============ BỔ SUNG V3 - Focus Excel ============ */
+.dt td input:focus, 
+.dt td select:focus {
+  outline: 2px solid var(--teal-500) !important;
+  outline-offset: -2px;
+  border-radius: 2px;
+  background-color: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  position: relative;
+  z-index: 10;
+}
+
+/* ============ BỔ SUNG V3 - Slide-out Panel ============ */
+.slide-panel-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 1000;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.slide-panel-overlay.show { opacity: 1; pointer-events: auto; }
+.slide-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 450px; max-width: 90vw;
+  background: #fff;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.1);
+  z-index: 1001;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex; flex-direction: column;
+}
+.slide-panel.open { transform: translateX(0); }
+.slide-panel-head {
+  padding: 16px 20px; border-bottom: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+  background: #F8FAFD;
+}
+.slide-panel-head h3 { margin: 0; font-size: 14.5px; color: var(--navy-900); }
+.slide-panel-close { cursor: pointer; font-size: 18px; color: var(--ink-soft); padding: 4px; }
+.slide-panel-close:hover { color: var(--red-500); }
+.slide-panel-body {
+  padding: 20px; overflow-y: auto; flex: 1;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.sp-field { display: flex; flex-direction: column; gap: 6px; }
+.sp-label { font-size: 11px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; }
+.sp-input, .sp-textarea {
+  border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px;
+  font-size: 13px; font-family: inherit; width: 100%; box-sizing: border-box;
+}
+.sp-textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+.sp-input:focus, .sp-textarea:focus { outline: 2px solid var(--teal-500); outline-offset: -1px; }

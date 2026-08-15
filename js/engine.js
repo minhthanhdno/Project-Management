@@ -196,6 +196,7 @@ window.HPC_ENGINE = (function () {
       ${canKanban ? `<button class="btn sm toggle-view-btn" data-v="kanban">▥ Kanban</button>` : ""}
       ${canGantt ? `<button class="btn sm toggle-view-btn" data-v="gantt">📊 Tiến độ</button>` : ""}
       <span class="spacer" style="flex:1"></span>
+      <button class="btn sm" id="btnSnapImage" onclick="window.HPC_EXPORT_IMAGE('viewRoot', '${moduleCfg.id}_BaoCao')" style="margin-right: 8px;">📷 Xuất Ảnh</button>
       ${moduleCfg.groupByColumn ? `<button class="btn sm" data-act="add-group">+ Thêm nhóm</button>` : `<button class="btn sm" data-act="add-row">+ Thêm dòng</button>`}
     `;
     wrap.appendChild(toolbar);
@@ -379,7 +380,7 @@ window.HPC_ENGINE = (function () {
        const fw = indent === 0 ? "700" : "normal";
        const color = indent === 0 ? "var(--navy-900)" : "var(--ink)";
 
-       return `<tr class="gantt-task-row">
+       return `<tr class="gantt-task-row" data-id="${r.ID}">
           <td class="gantt-col-fixed" style="padding-left: ${padLeft}px; font-weight: ${fw}; color: ${color};">${code}${esc(r[nameKey])}</td>
           <td colspan="${numWeeks}" class="gantt-timeline-cell">
              <div class="gantt-grid-bg">
@@ -406,6 +407,11 @@ window.HPC_ENGINE = (function () {
     html += `</tbody></table></div>`;
     const wrap = document.createElement("div");
     wrap.innerHTML = html;
+    wrap.querySelectorAll('.gantt-task-row').forEach(tr => {
+  const rid = tr.dataset.id;
+  const rowData = rows.find(x => x.ID === rid);
+  if(rowData) tr.addEventListener("dblclick", () => openSlidePanel(moduleCfg, columns, rowData));
+});
     return wrap.firstChild;
   }
   /////////////////////
@@ -452,20 +458,65 @@ window.HPC_ENGINE = (function () {
 
   function truthy(v) { return v === true || v === "true" || v === "TRUE" || v === 1 || v === "1"; }
 
- function buildFlatTable(moduleCfg, columns, rows, groupValue) {
+ /* ==========================================================================
+     Đã nâng cấp V3: Lazy Rendering (Tải dần khi cuộn) chống đơ UI
+     ========================================================================== */
+  function buildFlatTable(moduleCfg, columns, rows, groupValue) {
     const tblWrap = document.createElement("div");
     tblWrap.className = "tbl-wrap";
     const table = document.createElement("table");
     table.className = "dt";
     
-    // Đã nâng cấp: Mở rộng cột cuối cùng thành 90px để chứa đủ 3 nút thao tác
     table.innerHTML = `<thead><tr><th style="width:28px"></th>${columns.map(c => `<th style="${c.width ? "width:" + c.width : ""}">${esc(c.label)}</th>`).join("")}<th style="width:90px; text-align:center;">Thao tác</th></tr></thead>`;
     
     const tbody = document.createElement("tbody");
-    rows.forEach(row => tbody.appendChild(buildRow(moduleCfg, columns, row)));
     table.appendChild(tbody);
     tblWrap.appendChild(table);
-    enableDragReorder(tbody, moduleCfg);
+
+    // BẮT ĐẦU LAZY RENDERING
+    const CHUNK_SIZE = 50; // Mỗi lần vẽ 50 dòng
+    let currentIndex = 0;
+
+    function renderChunk() {
+      const chunk = rows.slice(currentIndex, currentIndex + CHUNK_SIZE);
+      if (chunk.length === 0) return;
+
+      // Xóa dòng "Đang tải..." cũ nếu có
+      const oldSentinel = tbody.querySelector(".sentinel-row");
+      if (oldSentinel) tbody.removeChild(oldSentinel);
+
+      // Vẽ các dòng mới
+      chunk.forEach(row => tbody.appendChild(buildRow(moduleCfg, columns, row)));
+      currentIndex += CHUNK_SIZE;
+
+      // Nếu vẫn còn dữ liệu chưa vẽ xong -> Đặt "con mắt quan sát" (Sentinel) ở cuối
+      if (currentIndex < rows.length) {
+        const sentinel = document.createElement("tr");
+        sentinel.className = "sentinel-row";
+        sentinel.innerHTML = `<td colspan="${columns.length + 2}" style="text-align:center; padding: 16px; color: var(--teal-500); font-size: 12px; font-weight: 500;">
+          <div class="spin" style="width:16px; height:16px; border-top-color:var(--teal-500); margin: 0 auto 6px; display: block;"></div>
+          Đang tải thêm...
+        </td>`;
+        tbody.appendChild(sentinel);
+        
+        // Sử dụng IntersectionObserver để bắt sự kiện cuộn chuột tới cuối
+        if (window.IntersectionObserver) {
+          const observer = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting) {
+              observer.disconnect(); // Ngắt quan sát cũ
+              requestAnimationFrame(() => renderChunk()); // Vẽ lô tiếp theo mượt mà
+            }
+          }, { rootMargin: "300px" }); // Bắt đầu tải khi còn cách đáy 300px
+          observer.observe(sentinel);
+        }
+      }
+      
+      // Kích hoạt lại tính năng kéo thả cho các dòng vừa được vẽ thêm
+      enableDragReorder(tbody, moduleCfg);
+    }
+
+    renderChunk(); // Kích hoạt vẽ lô đầu tiên ngay lập tức
+    // KẾT THÚC LAZY RENDERING
 
     const wrapper = document.createElement("div");
     wrapper.className = "card";
@@ -485,12 +536,14 @@ window.HPC_ENGINE = (function () {
     };
     foot.appendChild(addBtn);
     wrapper.appendChild(foot);
+    
     return wrapper;
   }
 
 function buildRow(moduleCfg, columns, row) {
     const tr = document.createElement("tr");
     tr.dataset.id = row.ID;
+    tr.addEventListener("dblclick", () => openSlidePanel(moduleCfg, columns, row));
     const handleTd = document.createElement("td");
     handleTd.className = "drag-handle";
     handleTd.title = "Kéo để đổi thứ tự";
@@ -806,6 +859,10 @@ function renderDashboard(root, allModules, roleFilter) {
     }
 
     root.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+         <h2 style="margin:0; font-size: 16px; color: var(--navy-900);">Tổng quan dự án</h2>
+         <button class="btn sm" id="btnSnapImage" onclick="window.HPC_EXPORT_IMAGE('viewRoot', 'Dashboard_BaoCao')" style="background:var(--teal-500); color:#fff; border:none;">📷 Xuất Ảnh</button>
+      </div>
       <div class="grid kpi-grid">${kpisHtml}</div>
       <div class="two-col" style="margin-bottom: 14px;">
         <div>
@@ -1289,6 +1346,210 @@ function renderDashboard(root, allModules, roleFilter) {
     section.appendChild(card);
     root.appendChild(section);
   }
+
+  /* ==========================================================================
+   BỔ SUNG V3: Tính năng 1 - Điều hướng bàn phím chuẩn Excel
+   ========================================================================== */
+document.addEventListener("keydown", function(e) {
+  // 1. Chỉ kích hoạt khi đang focus vào ô nhập liệu (Input/Select) trong bảng
+  const el = e.target;
+  if (el.tagName !== "INPUT" && el.tagName !== "SELECT") return;
+  
+  const td = el.closest("td");
+  const tr = el.closest("tr");
+  if (!td || !tr) return;
+  
+  const tbody = tr.parentElement;
+  if (tbody.tagName !== "TBODY") return; 
+
+  const currentColIdx = Array.from(tr.children).indexOf(td);
+  const currentRowIdx = Array.from(tbody.children).indexOf(tr);
+
+  let targetRow = null;
+  let targetColIdx = currentColIdx;
+
+  // 2. Bắt các phím điều hướng
+  if (e.key === "Enter") {
+    e.preventDefault();
+    el.blur(); // Tự động kích hoạt lưu dữ liệu (Dirty Check sẽ lo phần còn lại)
+    // Enter để xuống dòng, Shift + Enter để lên dòng
+    targetRow = tbody.children[e.shiftKey ? currentRowIdx - 1 : currentRowIdx + 1];
+  } 
+  else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    targetRow = tbody.children[currentRowIdx - 1];
+  } 
+  else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    targetRow = tbody.children[currentRowIdx + 1];
+  }
+  // 3. Thông minh: Chỉ nhảy ô Trái/Phải khi con trỏ chuột đã ở sát mép chữ
+  else if (e.key === "ArrowLeft" && el.tagName === "INPUT" && el.selectionStart === 0) {
+    targetRow = tr;
+    targetColIdx = currentColIdx - 1;
+  }
+  else if (e.key === "ArrowRight" && el.tagName === "INPUT" && el.selectionStart === el.value?.length) {
+    targetRow = tr;
+    targetColIdx = currentColIdx + 1;
+  }
+
+  // 4. Thực thi việc nhảy Focus
+  if (targetRow) {
+    let targetTd = targetRow.children[targetColIdx];
+    
+    // Nếu ô đích không phải là ô nhập liệu (VD: Cột số thứ tự, cột Checkbox), tự động trượt qua tìm ô tiếp theo
+    while (targetTd && !targetTd.querySelector("input:not([type='file']), select")) {
+       if (e.key === "ArrowLeft") {
+          targetColIdx--;
+          targetTd = targetRow.children[targetColIdx];
+       } else if (e.key === "ArrowRight") {
+          targetColIdx++;
+          targetTd = targetRow.children[targetColIdx];
+       } else {
+          break;
+       }
+    }
+
+    if (targetTd) {
+      const nextInput = targetTd.querySelector("input:not([type='file']), select");
+      if (nextInput) {
+        e.preventDefault(); // Ngăn trình duyệt cuộn màn hình
+        nextInput.focus();
+        
+        // Tự động bôi đen toàn bộ chữ (giống hệt Excel) để gõ đè số liệu mới cực nhanh
+        if (nextInput.select && nextInput.tagName !== "SELECT" && nextInput.type !== "date") {
+          nextInput.select();
+        }
+      }
+    }
+  }
+});
+
+/* ==========================================================================
+   BỔ SUNG V3: Tính năng 2 - Cửa sổ chi tiết (Slide-out Panel)
+   ========================================================================== */
+let slidePanelOverlay, slidePanel;
+
+function closeSlidePanel() {
+  if (slidePanel) slidePanel.classList.remove("open");
+  if (slidePanelOverlay) slidePanelOverlay.classList.remove("show");
+}
+
+function openSlidePanel(moduleCfg, columns, row) {
+  if (!document.getElementById("hpcSlidePanel")) {
+    slidePanelOverlay = document.createElement("div");
+    slidePanelOverlay.className = "slide-panel-overlay";
+    slidePanelOverlay.onclick = closeSlidePanel;
+    
+    slidePanel = document.createElement("div");
+    slidePanel.id = "hpcSlidePanel";
+    slidePanel.className = "slide-panel";
+    
+    document.body.appendChild(slidePanelOverlay);
+    document.body.appendChild(slidePanel);
+  }
+  
+  const titleKey = moduleCfg.primaryColumn || (columns[1] ? columns[1].key : columns[0].key);
+  const title = row[titleKey] || "Chi tiết hạng mục";
+  
+  let html = `
+    <div class="slide-panel-head">
+      <h3 style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${esc(title)}">${esc(title)}</h3>
+      <div class="slide-panel-close" onclick="closeSlidePanel()">✕</div>
+    </div>
+    <div class="slide-panel-body">
+  `;
+  
+  columns.forEach(col => {
+    if (col.key === "ID" || col.key === "Indent") return; 
+    
+    const val = row[col.key] || "";
+    // Thuật toán nhận diện các trường cần khung nhập liệu rộng (TextArea)
+    const isLongText = /(note|ghi chú|nội dung|giải pháp|content|solution|impact|chi tiết|nguyên nhân)/i.test(col.label);
+    
+    html += `
+      <div class="sp-field">
+        <label class="sp-label">${esc(col.label)}</label>
+        ${isLongText 
+          ? `<textarea class="sp-textarea" data-key="${col.key}">${esc(val)}</textarea>`
+          : `<input class="sp-input" type="${col.type === 'date' ? 'date' : 'text'}" data-key="${col.key}" value="${esc(val)}">`
+        }
+      </div>
+    `;
+  });
+  
+  html += `</div>`;
+  slidePanel.innerHTML = html;
+  
+  // Lắng nghe sự kiện sửa dữ liệu trên Form
+  slidePanel.querySelectorAll(".sp-input, .sp-textarea").forEach(input => {
+    input.addEventListener("blur", (e) => {
+      const key = e.target.dataset.key;
+      const newVal = e.target.value.trim();
+      if (String(row[key]) !== newVal) {
+        row[key] = newVal; 
+        store.updateField(moduleCfg.sheet, row.ID, key, newVal);
+        window.HPC_APP.refreshSyncBadgeSoon();
+        window.HPC_APP.render(); 
+      }
+    });
+  });
+
+  slidePanelOverlay.classList.add("show");
+  setTimeout(() => slidePanel.classList.add("open"), 10);
+}
+
+/* ==========================================================================
+   BỔ SUNG V3: Tính năng 4 - Xuất Ảnh Báo Cáo (html2canvas)
+   ========================================================================== */
+window.HPC_EXPORT_IMAGE = async function(containerId, fileName) {
+  const el = document.getElementById(containerId);
+  if (!el) { alert("Không tìm thấy khu vực hiển thị!"); return; }
+  
+  const btn = document.getElementById("btnSnapImage");
+  if (btn) { btn.innerHTML = "⌛ Đang xử lý..."; btn.disabled = true; }
+
+  // Lưu lại trạng thái thanh cuộn ban đầu
+  const ganttWrap = el.querySelector('.gantt-wrap');
+  const scrollableAlerts = el.querySelector('#dashAlertsOd');
+  
+  if (ganttWrap) {
+     ganttWrap.style.maxHeight = 'none';
+     ganttWrap.style.overflow = 'visible';
+  }
+  if (scrollableAlerts) {
+     scrollableAlerts.style.maxHeight = 'none';
+     scrollableAlerts.style.overflow = 'visible';
+  }
+
+  try {
+    const canvas = await html2canvas(el, {
+      scale: 1.5, // Tăng độ phân giải ảnh lên 1.5 lần
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+    
+    // Tải ảnh xuống
+    const link = document.createElement("a");
+    link.download = fileName + "_" + new Date().toISOString().slice(0,10) + ".png";
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  } catch (err) {
+    alert("Lỗi chụp ảnh: " + err.message);
+  } finally {
+    // Phục hồi giao diện
+    if (ganttWrap) {
+       ganttWrap.style.maxHeight = '75vh';
+       ganttWrap.style.overflow = 'auto';
+    }
+    if (scrollableAlerts) {
+       scrollableAlerts.style.maxHeight = '320px';
+       scrollableAlerts.style.overflow = 'auto';
+    }
+    if (btn) { btn.innerHTML = "📷 Xuất Ảnh"; btn.disabled = false; }
+  }
+};
 
   return {
     renderTable, renderDashboard, renderCalendar, renderTodayWorkWidget,
